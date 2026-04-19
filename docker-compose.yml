@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: benel_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       benel_dpflow
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: benel_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV:              development
+      PORT:                  3001
+      DB_HOST:               db
+      DB_PORT:               5432
+      DB_NAME:               benel_dpflow
+      DB_USER:               postgres
+      DB_PASSWORD:           postgres123
+      DB_SSL:                "false"
+      JWT_SECRET:            dev_jwt_secret_troque_em_producao_64chars_aqui
+      JWT_REFRESH_SECRET:    dev_refresh_secret_diferente_troque_producao_64chars
+      JWT_EXPIRES_IN:        8h
+      JWT_REFRESH_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS:         "10"
+      CORS_ORIGIN:           http://localhost:5173
+      LOG_LEVEL:             info
+      ADMIN_EMAIL:           admin@benel.com.br
+      ADMIN_PASSWORD:        "Admin@2025!"
+      ADMIN_NOME:            Administrador
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  pgdata:
