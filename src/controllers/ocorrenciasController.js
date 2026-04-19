@@ -51,6 +51,7 @@ exports.criar = async (req, res) => {
   try {
     const {
       tipo, chapa, nome_colaborador,
+      cpf, secao, admissao,
       motivo, data_ocorrencia, data_inicio, dias_suspensao
     } = req.body;
 
@@ -75,12 +76,14 @@ exports.criar = async (req, res) => {
     const r = await db.query(`
       INSERT INTO ocorrencias_disciplinares
         (tipo, colaborador_id, chapa, nome_colaborador, gestor_id, gestor_nome,
+         cpf, secao, admissao,
          motivo, data_ocorrencia, data_inicio, data_fim, dias_suspensao)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       RETURNING *
     `, [
       tipo, colaborador_id, chapa, nome_colaborador,
       req.usuario.id, req.usuario.nome,
+      cpf || null, secao || null, admissao || null,
       motivo, data_ocorrencia,
       data_inicio || null, data_fim,
       dias_suspensao || null
