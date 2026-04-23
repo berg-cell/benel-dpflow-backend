@@ -14,10 +14,19 @@ exports.listar = async (req, res) => {
   try {
     const { status, competencia } = req.query;
     const filtros = { status, competencia };
-    // IDOR: gestor só vê seus próprios blocos
     if (req.usuario.perfil === "gestor") filtros.solicitante_id = req.usuario.id;
     const r = await BlocoModel.findAll(filtros);
-    return R.success(res, r.rows);
+
+    // Buscar linhas e histórico de cada bloco
+    const blocos = await Promise.all(r.rows.map(async (b) => {
+      const [linhas, historico] = await Promise.all([
+        BlocoModel.findLinhas(b.id),
+        BlocoModel.findHistorico(b.id),
+      ]);
+      return { ...b, linhas: linhas.rows, historico: historico.rows };
+    }));
+
+    return R.success(res, blocos);
   } catch (e) { return R.error(res, e.message); }
 };
 
