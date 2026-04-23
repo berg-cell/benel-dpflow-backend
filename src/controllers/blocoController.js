@@ -46,7 +46,6 @@ exports.buscarPorId = async (req, res) => {
 
 exports.criar = async (req, res) => {
   try {
-    console.log("CRIAR BLOCO payload:", JSON.stringify(req.body));
     const bloco = await BlocoModel.create(req.body, req.usuario.id);
     await AuditoriaModel.registrar({
       usuario_id: req.usuario.id, acao: "BLOCO_CRIADO",
