@@ -12,15 +12,13 @@ const PORT = parseInt(process.env.PORT || "3001");
     const dbInfo = await db.testConnection();
     logger.info(`Banco OK: ${dbInfo.banco} — ${dbInfo.agora}`);
 
-    const server = app.listen(PORT, () => {
-      logger.info(`DP Flow Backend rodando | porta ${PORT} | env: ${process.env.NODE_ENV || "development"}`);
-      logger.info(`Swagger : http://localhost:${PORT}/docs`);
-      logger.info(`Health  : http://localhost:${PORT}/api/health`);
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      logger.info(`DP Flow Backend | porta ${PORT} | ${process.env.NODE_ENV || "development"}`);
     });
 
     const shutdown = (sig) => {
-      logger.info(`${sig} recebido — encerrando...`);
-      server.close(() => { logger.info("Servidor encerrado."); process.exit(0); });
+      logger.info(`${sig} — encerrando...`);
+      server.close(() => { logger.info("Encerrado."); process.exit(0); });
       setTimeout(() => process.exit(1), 10000);
     };
 
