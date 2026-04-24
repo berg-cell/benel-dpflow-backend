@@ -12,6 +12,7 @@ const colaboradorCtrl = require("../controllers/colaboradorController");
 const eventoCtrl      = require("../controllers/eventoController");
 const blocoCtrl       = require("../controllers/blocoController");
 const auditoriaCtrl   = require("../controllers/auditoriaController");
+const desligamentoCtrl = require("../controllers/desligamentoController");
 const ocorrenciasCtrl     = require("../controllers/ocorrenciasController");
 const hierarquiaCtrl      = require("../controllers/hierarquiaAlcadasController");
 
@@ -117,7 +118,16 @@ router.post("/blocos",                  autenticar, validate(schemas.blocoSchema
 router.put( "/blocos/:id/aprovar",      autenticar, validate(schemas.acaoAprovacaoSchema), auditLog("APROVAR"), blocoCtrl.aprovar);
 
 // ── Auditoria ─────────────────────────────────────────────────────────────────
-router.get("/auditoria", autenticar, autorizar("dp","admin"), auditoriaCtrl.listar);
+router.get("/auditoria", autenticar, autorizar("dp","admin"), auditoriaCtrl.listar); 
+
+// ── Desligamento ──────────────────────────────────────────────────────────────
+router.get( "/desligamentos",                autenticar,                                     desligamentoCtrl.listar);
+router.get( "/desligamentos/:id",            autenticar,                                     desligamentoCtrl.buscarPorId);
+router.post("/desligamentos",                autenticar, autorizar("gestor","dp","admin"),    desligamentoCtrl.criar);
+router.put( "/desligamentos/:id/enviar",     autenticar, autorizar("gestor","dp","admin"),    desligamentoCtrl.enviar);
+router.put( "/desligamentos/:id/aprovar",    autenticar, autorizar("superior","dp","admin"),  desligamentoCtrl.aprovar);
+router.post("/desligamentos/:id/anexos",     autenticar,                                     desligamentoCtrl.addAnexo);
+router.get( "/desligamentos/:id/anexos/:anexoId", autenticar,                                desligamentoCtrl.getAnexo); 
 
 // ── Hierarquia ───────────────────────────────────────────────────────────────
 router.get( "/hierarquia",      autenticar, autorizar("dp","admin"),                       hierarquiaCtrl.listarHierarquia);
