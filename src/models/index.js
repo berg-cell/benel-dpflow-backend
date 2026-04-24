@@ -233,3 +233,137 @@ const AuditoriaModel = {
 };
 
 module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel };
+
+// ── Solicitação de Desligamento ───────────────────────────────────────────────
+const DesligamentoModel = {
+  findAll: ({ gestor_id, status, perfil } = {}) => {
+    let q = `
+      SELECT sd.*,
+             c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
+             c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
+             u.nome AS gestor_nome
+      FROM solicitacao_desligamento sd
+      LEFT JOIN colaboradores c ON sd.colaborador_id = c.id
+      LEFT JOIN usuarios u      ON sd.gestor_id = u.id
+      WHERE 1=1
+    `;
+    const p = []; let i = 1;
+    if (status)    { q += ` AND sd.status=$${i++}`;    p.push(status); }
+    if (perfil === "gestor" && gestor_id)
+                   { q += ` AND sd.gestor_id=$${i++}`; p.push(gestor_id); }
+    return db.query(q + " ORDER BY sd.criado_em DESC", p);
+  },
+
+  findById: (id) =>
+    db.query(`
+      SELECT sd.*,
+             c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
+             c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
+             u.nome AS gestor_nome
+      FROM solicitacao_desligamento sd
+      LEFT JOIN colaboradores c ON sd.colaborador_id = c.id
+      LEFT JOIN usuarios u      ON sd.gestor_id = u.id
+      WHERE sd.id=$1
+    `, [id]),
+
+  findLogs: (solicitacaoId) =>
+    db.query(`
+      SELECT sdl.*, u.nome AS usuario_nome
+      FROM solicitacao_desligamento_logs sdl
+      LEFT JOIN usuarios u ON sdl.usuario_id = u.id
+      WHERE sdl.solicitacao_id=$1
+      ORDER BY sdl.criado_em ASC
+    `, [solicitacaoId]),
+
+  findAnexos: (solicitacaoId) =>
+    db.query(`
+      SELECT id, solicitacao_id, nome_arquivo, tipo_arquivo, usuario_id, criado_em
+      FROM solicitacao_desligamento_anexos
+      WHERE solicitacao_id=$1
+      ORDER BY criado_em ASC
+    `, [solicitacaoId]),
+
+  create: (dados, gestorId) =>
+    db.transaction(async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO solicitacao_desligamento
+           (colaborador_id, gestor_id, tipo, data_desligamento, data_aviso,
+            reducao_jornada, justificativa, observacoes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'rascunho') RETURNING *`,
+        [dados.colaborador_id, gestorId, dados.tipo,
+         dados.data_desligamento, dados.data_aviso || null,
+         dados.reducao_jornada || false,
+         dados.justificativa || null, dados.observacoes || null]
+      );
+      const sol = rows[0];
+      await client.query(
+        `INSERT INTO solicitacao_desligamento_logs
+           (solicitacao_id, usuario_id, acao, dados_depois)
+         VALUES ($1,$2,'criado',$3)`,
+        [sol.id, gestorId, JSON.stringify(dados)]
+      );
+      return sol;
+    }),
+
+  enviar: (id, usuarioId) =>
+    db.transaction(async (client) => {
+      const { rows } = await client.query(
+        `UPDATE solicitacao_desligamento
+         SET status='pendente_superior', atualizado_em=NOW()
+         WHERE id=$1 AND status='rascunho' RETURNING *`,
+        [id]
+      );
+      if (!rows.length) throw Object.assign(new Error("Solicitação não encontrada ou já enviada"), { status: 400 });
+      await client.query(
+        `INSERT INTO solicitacao_desligamento_logs(solicitacao_id,usuario_id,acao)
+         VALUES ($1,$2,'enviado')`,
+        [id, usuarioId]
+      );
+      return rows[0];
+    }),
+
+  avancarStatus: (id, usuarioId, acao, observacao) =>
+    db.transaction(async (client) => {
+      const { rows, rowCount } = await client.query(
+        "SELECT * FROM solicitacao_desligamento WHERE id=$1", [id]
+      );
+      if (!rowCount) throw Object.assign(new Error("Solicitação não encontrada"), { status: 404 });
+      const mapa = {
+        pendente_superior: "pendente_dp",
+        pendente_dp:       "aprovado",
+      };
+      let novoStatus = rows[0].status;
+      if (acao === "aprovar")           novoStatus = mapa[novoStatus] || "aprovado";
+      if (acao === "reprovar")          novoStatus = "reprovado";
+      if (acao === "solicitar_ajuste")  novoStatus = "ajuste_solicitado";
+      if (acao === "finalizar")         novoStatus = "finalizado";
+      await client.query(
+        `UPDATE solicitacao_desligamento
+         SET status=$1, atualizado_em=NOW() WHERE id=$2`,
+        [novoStatus, id]
+      );
+      await client.query(
+        `INSERT INTO solicitacao_desligamento_logs
+           (solicitacao_id, usuario_id, acao, observacao, dados_antes, dados_depois)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, usuarioId, acao, observacao || null,
+         JSON.stringify({ status: rows[0].status }),
+         JSON.stringify({ status: novoStatus })]
+      );
+      return novoStatus;
+    }),
+
+  addAnexo: (solicitacaoId, usuarioId, dados) =>
+    db.query(
+      `INSERT INTO solicitacao_desligamento_anexos
+         (solicitacao_id, nome_arquivo, tipo_arquivo, dados_base64, usuario_id)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, nome_arquivo, tipo_arquivo, criado_em`,
+      [solicitacaoId, dados.nome_arquivo, dados.tipo_arquivo,
+       dados.dados_base64, usuarioId]
+    ),
+
+  getAnexo: (anexoId) =>
+    db.query(
+      "SELECT * FROM solicitacao_desligamento_anexos WHERE id=$1", [anexoId]
+    ),
+};
