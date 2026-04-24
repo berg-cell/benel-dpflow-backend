@@ -258,6 +258,7 @@ const DesligamentoModel = {
       SELECT sd.*,
              c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
              c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
+             c.data_admissao,
              u.nome AS gestor_nome
       FROM solicitacao_desligamento sd
       LEFT JOIN colaboradores c ON sd.colaborador_id = c.id
