@@ -367,3 +367,7 @@ const DesligamentoModel = {
       "SELECT * FROM solicitacao_desligamento_anexos WHERE id=$1", [anexoId]
     ),
 };
+
+// ... todo o código do DesligamentoModel ...
+
+module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel, DesligamentoModel };
