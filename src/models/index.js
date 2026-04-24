@@ -232,7 +232,7 @@ const AuditoriaModel = {
   },
 };
 
-module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel };
+module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel, DesligamentoModel };
 
 // ── Solicitação de Desligamento ───────────────────────────────────────────────
 const DesligamentoModel = {
