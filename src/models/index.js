@@ -232,8 +232,6 @@ const AuditoriaModel = {
   },
 };
 
-module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel, DesligamentoModel };
-
 // ── Solicitação de Desligamento ───────────────────────────────────────────────
 const DesligamentoModel = {
   findAll: ({ gestor_id, status, perfil } = {}) => {
