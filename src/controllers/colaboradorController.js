@@ -3,10 +3,25 @@
 const { ColaboradorModel, AuditoriaModel } = require("../models");
 const R = require("../utils/response");
 
+exports.buscar = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2)
+      return R.badRequest(res, "Informe ao menos 2 caracteres para busca");
+    // Busca já exclui cod_situacao = 'D' no banco (findAll com incluirDemitidos=false)
+    const r = await ColaboradorModel.findAll({ busca: q.trim(), incluirDemitidos: false });
+    return R.success(res, r.rows);
+  } catch (e) { return R.error(res, e.message); }
+};
+
 exports.listar = async (req, res) => {
   try {
-    const { situacao, busca } = req.query;
-    const r = await ColaboradorModel.findAll({ situacao, busca });
+    const { situacao, busca, incluirDemitidos } = req.query;
+    const r = await ColaboradorModel.findAll({
+      situacao,
+      busca,
+      incluirDemitidos: incluirDemitidos === "true",
+    });
     return R.success(res, r.rows);
   } catch (e) { return R.error(res, e.message); }
 };
@@ -57,14 +72,19 @@ exports.importar = async (req, res) => {
     const listaNorm = lista
       .filter(r => r.chapa && r.nome)
       .map(r => ({
-        chapa:         String(r.chapa || "").trim(),
-        nome:          String(r.nome || "").trim(),
-        funcao:        r.funcao || null,
-        situacao:      ["Ativo","Inativo"].includes(r.situacao) ? r.situacao : "Ativo",
-        centro_custo:  r.centro_custo || null,
-        desc_cc:       r.desc_cc || null,
-        cpf:           r.cpf || null,
-        data_admissao: r.data_admissao && r.data_admissao !== "" ? r.data_admissao : null,
+        chapa:                  String(r.chapa || "").trim(),
+        nome:                   String(r.nome || "").trim(),
+        funcao:                 r.funcao || null,
+        situacao:               ["Ativo","Inativo"].includes(r.situacao) ? r.situacao : "Ativo",
+        cod_situacao:           r.cod_situacao ? String(r.cod_situacao).trim() : null,
+        centro_custo:           r.centro_custo || null,
+        desc_cc:                r.desc_cc || null,
+        cpf:                    r.cpf || null,
+        data_admissao:          r.data_admissao && r.data_admissao !== "" ? r.data_admissao : null,
+        tipo_contrato:          r.tipo_contrato || null,
+        data_fim_contrato:      r.data_fim_contrato && r.data_fim_contrato !== "" ? r.data_fim_contrato : null,
+        data_fim_estabilidade:  r.data_fim_estabilidade && r.data_fim_estabilidade !== "" ? r.data_fim_estabilidade : null,
+        descricao_estabilidade: r.descricao_estabilidade || null,
       }));
     if (listaNorm.length === 0)
       return R.badRequest(res, "Nenhum registro válido para importar");
