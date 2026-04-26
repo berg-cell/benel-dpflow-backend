@@ -8,8 +8,7 @@ exports.buscar = async (req, res) => {
     const { q } = req.query;
     if (!q || q.trim().length < 2)
       return R.badRequest(res, "Informe ao menos 2 caracteres para busca");
-    // Busca já exclui cod_situacao = 'D' no banco (findAll com incluirDemitidos=false)
-    const r = await ColaboradorModel.findAll({ busca: q.trim(), incluirDemitidos: false });
+    const r = await ColaboradorModel.findAll({ busca: q.trim() });
     return R.success(res, r.rows);
   } catch (e) { return R.error(res, e.message); }
 };
@@ -68,7 +67,6 @@ exports.importar = async (req, res) => {
     const lista = req.body.colaboradores || req.body.lista;
     if (!Array.isArray(lista) || lista.length === 0)
       return R.badRequest(res, "Lista de colaboradores vazia");
-    // Filtrar e normalizar registros
     const listaNorm = lista
       .filter(r => r.chapa && r.nome)
       .map(r => ({
