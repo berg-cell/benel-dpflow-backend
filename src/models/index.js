@@ -78,8 +78,24 @@ const ColaboradorModel = {
     return db.query(`UPDATE colaboradores SET ${sets.join(",")} WHERE id=$${i} RETURNING *`, p);
   },
   upsertBatch: async (lista) => {
-    const out = [];
+    // Desduplicar a própria lista: quando há mesma chapa repetida,
+    // prioriza o registro com cod_situacao != "D" (ativo/em exercício)
+    const mapaLista = new Map();
     for (const item of lista) {
+      const chave = String(item.chapa).trim();
+      const existente = mapaLista.get(chave);
+      if (!existente) {
+        mapaLista.set(chave, item);
+      } else {
+        // Prefere o que NÃO é demitido
+        const itemAtivo    = item.cod_situacao !== "D";
+        const existeAtivo  = existente.cod_situacao !== "D";
+        if (itemAtivo && !existeAtivo) mapaLista.set(chave, item);
+      }
+    }
+
+    const out = [];
+    for (const item of mapaLista.values()) {
       const ex = await ColaboradorModel.findByChapa(item.chapa);
       if (ex.rowCount > 0) {
         const r = await ColaboradorModel.update(ex.rows[0].id, item);
