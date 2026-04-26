@@ -121,6 +121,7 @@ router.put( "/blocos/:id/aprovar",      autenticar, validate(schemas.acaoAprovac
 router.get("/auditoria", autenticar, autorizar("dp","admin"), auditoriaCtrl.listar); 
 
 // ── Desligamento ──────────────────────────────────────────────────────────────
+router.get( "/desligamentos/validar-colaborador/:id", autenticar, autorizar("gestor","dp","admin"), desligamentoCtrl.validarColaborador);
 router.get( "/desligamentos",                autenticar,                                     desligamentoCtrl.listar);
 router.get( "/desligamentos/:id",            autenticar,                                     desligamentoCtrl.buscarPorId);
 router.post("/desligamentos",                autenticar, autorizar("gestor","dp","admin"),    desligamentoCtrl.criar);
