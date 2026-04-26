@@ -93,6 +93,33 @@ exports.criar = async (req, res) => {
   } catch (e) { return R.error(res, e.message); }
 };
 
+// ── Adicionar anexo ───────────────────────────────────────────────────────────
+exports.addAnexo = async (req, res) => {
+  try {
+    const { nome_arquivo, tipo_arquivo, dados_base64 } = req.body;
+    if (!nome_arquivo || !dados_base64)
+      return R.badRequest(res, "Nome e dados do arquivo são obrigatórios");
+    if (dados_base64.length > 5 * 1024 * 1024)
+      return R.badRequest(res, "Arquivo muito grande (máximo 5MB)");
+
+    const check = await db.query(
+      "SELECT id, gestor_id FROM ocorrencias_disciplinares WHERE id = $1", [req.params.id]
+    );
+    if (check.rowCount === 0) return R.notFound(res, "Ocorrência não encontrada");
+    if (req.usuario.perfil === "gestor" && check.rows[0].gestor_id !== req.usuario.id)
+      return R.forbidden(res, "Acesso negado");
+
+    const r = await db.query(
+      `INSERT INTO ocorrencias_disciplinares_anexos
+         (ocorrencia_id, nome_arquivo, tipo_arquivo, dados_base64, usuario_id)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING id, nome_arquivo, tipo_arquivo, criado_em`,
+      [req.params.id, nome_arquivo, tipo_arquivo || null, dados_base64, req.usuario.id]
+    );
+    return R.created(res, r.rows[0], "Anexo adicionado com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
 // ── Cancelar ──────────────────────────────────────────────────────────────────
 exports.cancelar = async (req, res) => {
   try {
