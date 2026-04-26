@@ -145,5 +145,6 @@ router.get( "/ocorrencias/exportar",     autenticar, autorizar("dp","admin","ges
 router.get( "/ocorrencias/:id",          autenticar,                                                    ocorrenciasCtrl.buscarPorId);
 router.post("/ocorrencias",              autenticar, autorizar("gestor","dp","admin"), auditLog("CRIAR_OCORRENCIA"),   ocorrenciasCtrl.criar);
 router.put( "/ocorrencias/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), auditLog("CANCELAR_OCORRENCIA"), ocorrenciasCtrl.cancelar);
+router.post("/ocorrencias/:id/anexos",   autenticar,                                  auditLog("ANEXO_OCORRENCIA"),    ocorrenciasCtrl.addAnexo);
 
 module.exports = router;
