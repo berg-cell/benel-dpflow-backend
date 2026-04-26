@@ -1,7 +1,51 @@
 // src/controllers/desligamentoController.js
 "use strict";
 const { DesligamentoModel, AuditoriaModel } = require("../models");
+const db = require("../config/database");
 const R = require("../utils/response");
+
+// ── Validar colaborador para desligamento ─────────────────────────────────────
+exports.validarColaborador = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await db.query("SELECT * FROM colaboradores WHERE id = $1", [id]);
+    if (!r.rowCount) return R.notFound(res, "Colaborador não encontrado");
+
+    const c = r.rows[0];
+
+    // Regra 1 — situação "D" (demitido)
+    if (c.cod_situacao === "D") {
+      return R.success(res, {
+        apto: false,
+        motivo: "situacao",
+        mensagem: "Colaborador não pode ser selecionado para desligamento, pois já consta com situação Demitido.",
+      });
+    }
+
+    // Regra 2 — estabilidade ativa
+    if (c.data_fim_estabilidade) {
+      const fimEstab = new Date(c.data_fim_estabilidade);
+      fimEstab.setHours(0, 0, 0, 0);
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      if (fimEstab >= hoje) {
+        const fmtBR = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+        return R.success(res, {
+          apto: false,
+          motivo: "estabilidade",
+          mensagem: `Este colaborador não pode ser desligado, pois possui estabilidade ativa: ${c.descricao_estabilidade || "Estabilidade"}. A estabilidade encerra em ${fmtBR(fimEstab)}.`,
+          data_fim_estabilidade: c.data_fim_estabilidade,
+          descricao_estabilidade: c.descricao_estabilidade,
+        });
+      }
+    }
+
+    // Apto
+    return R.success(res, { apto: true });
+  } catch (e) { return R.error(res, e.message); }
+};
+
 
 const ALCADA = {
   pendente_superior: ["superior", "admin"],
