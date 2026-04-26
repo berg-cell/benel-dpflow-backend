@@ -147,6 +147,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
   criado_em     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+-- ── Centro de Custo ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS centro_custo (
+  id          SERIAL PRIMARY KEY,
+  codccusto   VARCHAR(30)  NOT NULL UNIQUE,
+  nome        VARCHAR(200) NOT NULL,
+  tipo        VARCHAR(20)  NOT NULL DEFAULT 'ATIVO' CHECK (tipo IN ('ATIVO','BLOQUEADO')),
+  criado_em   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_centro_custo_cod ON centro_custo(codccusto);
+CREATE INDEX IF NOT EXISTS idx_centro_custo_tipo ON centro_custo(tipo);
+
 -- ── Ocorrências disciplinares ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ocorrencias_disciplinares (
   id               SERIAL PRIMARY KEY,
