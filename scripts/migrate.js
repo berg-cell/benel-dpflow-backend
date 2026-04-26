@@ -31,16 +31,26 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 
 -- ── Colaboradores ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS colaboradores (
-  id            SERIAL PRIMARY KEY,
-  chapa         VARCHAR(16)  NOT NULL UNIQUE,
-  nome          VARCHAR(200) NOT NULL,
-  funcao        VARCHAR(100),
-  situacao      VARCHAR(10)  NOT NULL DEFAULT 'Ativo' CHECK (situacao IN ('Ativo','Inativo')),
-  centro_custo  VARCHAR(20),
-  desc_cc       VARCHAR(100),
-  criado_em     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  atualizado_em TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id               SERIAL PRIMARY KEY,
+  chapa            VARCHAR(16)  NOT NULL UNIQUE,
+  nome             VARCHAR(200) NOT NULL,
+  funcao           VARCHAR(100),
+  situacao         VARCHAR(10)  NOT NULL DEFAULT 'Ativo' CHECK (situacao IN ('Ativo','Inativo')),
+  centro_custo     VARCHAR(20),
+  desc_cc          VARCHAR(100),
+  cpf              VARCHAR(14),
+  data_admissao    DATE,
+  tipo_contrato    VARCHAR(30),
+  data_fim_contrato DATE,
+  criado_em        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  atualizado_em    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- Garante colunas em bancos que já existiam antes dessa versão do migrate
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS cpf               VARCHAR(14);
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_admissao     DATE;
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS tipo_contrato     VARCHAR(30);
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_fim_contrato DATE;
 
 -- ── Eventos ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS eventos (
@@ -131,15 +141,110 @@ CREATE TABLE IF NOT EXISTS audit_log (
   criado_em     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+-- ── Ocorrências disciplinares ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ocorrencias_disciplinares (
+  id               SERIAL PRIMARY KEY,
+  tipo             VARCHAR(20)   NOT NULL CHECK (tipo IN ('ADVERTENCIA','SUSPENSAO')),
+  colaborador_id   INTEGER       REFERENCES colaboradores(id),
+  chapa            VARCHAR(16),
+  nome_colaborador VARCHAR(200),
+  gestor_id        INTEGER       NOT NULL REFERENCES usuarios(id),
+  gestor_nome      VARCHAR(150),
+  cpf              VARCHAR(14),
+  secao            VARCHAR(100),
+  admissao         DATE,
+  motivo           TEXT          NOT NULL,
+  data_ocorrencia  DATE          NOT NULL,
+  data_inicio      DATE,
+  data_fim         DATE,
+  dias_suspensao   SMALLINT,
+  status           VARCHAR(20)   NOT NULL DEFAULT 'ATIVO' CHECK (status IN ('ATIVO','CANCELADO')),
+  flag_exportado   BOOLEAN       NOT NULL DEFAULT false,
+  data_exportacao  TIMESTAMPTZ,
+  exportado_por    INTEGER       REFERENCES usuarios(id),
+  criado_em        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  atualizado_em    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ── Anexos de ocorrências disciplinares ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ocorrencias_disciplinares_anexos (
+  id              SERIAL PRIMARY KEY,
+  ocorrencia_id   INTEGER       NOT NULL REFERENCES ocorrencias_disciplinares(id) ON DELETE CASCADE,
+  nome_arquivo    VARCHAR(255)  NOT NULL,
+  tipo_arquivo    VARCHAR(100),
+  dados_base64    TEXT          NOT NULL,
+  usuario_id      INTEGER       REFERENCES usuarios(id),
+  criado_em       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ── Log de exportações de ocorrências ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS log_exportacoes_ocorrencias (
+  id             SERIAL PRIMARY KEY,
+  usuario_id     INTEGER       REFERENCES usuarios(id),
+  usuario_nome   VARCHAR(150),
+  quantidade     INTEGER       NOT NULL,
+  ids_exportados INTEGER[],
+  criado_em      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ── Solicitações de desligamento ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS solicitacao_desligamento (
+  id                  SERIAL PRIMARY KEY,
+  colaborador_id      INTEGER       NOT NULL REFERENCES colaboradores(id),
+  gestor_id           INTEGER       NOT NULL REFERENCES usuarios(id),
+  tipo                VARCHAR(30)   NOT NULL,
+  data_desligamento   DATE          NOT NULL,
+  data_aviso          DATE,
+  reducao_jornada     BOOLEAN       NOT NULL DEFAULT false,
+  justificativa       TEXT,
+  observacoes         TEXT,
+  status              VARCHAR(30)   NOT NULL DEFAULT 'rascunho'
+                      CHECK (status IN (
+                        'rascunho','pendente_superior','pendente_dp',
+                        'aprovado','reprovado','ajuste_solicitado','finalizado'
+                      )),
+  criado_em           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  atualizado_em       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ── Logs de desligamento ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS solicitacao_desligamento_logs (
+  id              SERIAL PRIMARY KEY,
+  solicitacao_id  INTEGER       NOT NULL REFERENCES solicitacao_desligamento(id) ON DELETE CASCADE,
+  usuario_id      INTEGER       REFERENCES usuarios(id),
+  acao            VARCHAR(30)   NOT NULL,
+  observacao      TEXT,
+  dados_antes     JSONB,
+  dados_depois    JSONB,
+  criado_em       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ── Anexos de desligamento ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS solicitacao_desligamento_anexos (
+  id              SERIAL PRIMARY KEY,
+  solicitacao_id  INTEGER       NOT NULL REFERENCES solicitacao_desligamento(id) ON DELETE CASCADE,
+  nome_arquivo    VARCHAR(255)  NOT NULL,
+  tipo_arquivo    VARCHAR(100),
+  dados_base64    TEXT          NOT NULL,
+  usuario_id      INTEGER       REFERENCES usuarios(id),
+  criado_em       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
 -- ── Índices de performance ────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_blocos_status        ON blocos(status);
-CREATE INDEX IF NOT EXISTS idx_blocos_solicitante   ON blocos(solicitante_id);
-CREATE INDEX IF NOT EXISTS idx_blocos_competencia   ON blocos(competencia);
-CREATE INDEX IF NOT EXISTS idx_audit_usuario        ON audit_log(usuario_id);
-CREATE INDEX IF NOT EXISTS idx_audit_acao           ON audit_log(acao);
-CREATE INDEX IF NOT EXISTS idx_audit_criado_em      ON audit_log(criado_em DESC);
-CREATE INDEX IF NOT EXISTS idx_colaboradores_chapa  ON colaboradores(chapa);
-CREATE INDEX IF NOT EXISTS idx_bloco_linhas_bloco   ON bloco_linhas(bloco_id);
+CREATE INDEX IF NOT EXISTS idx_blocos_status              ON blocos(status);
+CREATE INDEX IF NOT EXISTS idx_blocos_solicitante         ON blocos(solicitante_id);
+CREATE INDEX IF NOT EXISTS idx_blocos_competencia         ON blocos(competencia);
+CREATE INDEX IF NOT EXISTS idx_audit_usuario              ON audit_log(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_audit_acao                 ON audit_log(acao);
+CREATE INDEX IF NOT EXISTS idx_audit_criado_em            ON audit_log(criado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_colaboradores_chapa        ON colaboradores(chapa);
+CREATE INDEX IF NOT EXISTS idx_bloco_linhas_bloco         ON bloco_linhas(bloco_id);
+CREATE INDEX IF NOT EXISTS idx_ocorrencias_gestor         ON ocorrencias_disciplinares(gestor_id);
+CREATE INDEX IF NOT EXISTS idx_ocorrencias_colaborador    ON ocorrencias_disciplinares(colaborador_id);
+CREATE INDEX IF NOT EXISTS idx_ocorrencias_status         ON ocorrencias_disciplinares(status);
+CREATE INDEX IF NOT EXISTS idx_desligamento_gestor        ON solicitacao_desligamento(gestor_id);
+CREATE INDEX IF NOT EXISTS idx_desligamento_status        ON solicitacao_desligamento(status);
+CREATE INDEX IF NOT EXISTS idx_desligamento_logs_sol      ON solicitacao_desligamento_logs(solicitacao_id);
 `;
 
 (async () => {
