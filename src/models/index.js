@@ -50,19 +50,27 @@ const UsuarioModel = {
 
 // ── Colaborador ───────────────────────────────────────────────────────────────
 const ColaboradorModel = {
-  findAll: ({ situacao, busca, incluirDemitidos = false } = {}) => {
+  findAll: async ({ situacao, busca, incluirDemitidos = false } = {}) => {
+    // Verifica se cod_situacao já existe no banco (pode não existir antes do migrate)
+    let temCodSituacao = false;
+    try {
+      const colCheck = await db.query(`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'colaboradores' AND column_name = 'cod_situacao'
+      `);
+      temCodSituacao = colCheck.rowCount > 0;
+    } catch (_) {}
+
     let q = "SELECT * FROM colaboradores WHERE 1=1"; const p = []; let i = 1;
-    if (!incluirDemitidos) {
+    if (!incluirDemitidos && temCodSituacao) {
       q += ` AND (cod_situacao IS NULL OR cod_situacao <> 'D')`;
     }
     if (situacao) { q += ` AND situacao=$${i++}`; p.push(situacao); }
     if (busca)    { q += ` AND (nome ILIKE $${i} OR chapa ILIKE $${i})`; p.push(`%${busca}%`); i++; }
     return db.query(q + " ORDER BY nome", p);
   },
-
   findById:    (id)    => db.query("SELECT * FROM colaboradores WHERE id=$1",    [id]),
   findByChapa: (chapa) => db.query("SELECT * FROM colaboradores WHERE chapa=$1", [chapa]),
-
   create: (d) =>
     db.query(
       `INSERT INTO colaboradores(chapa,nome,funcao,situacao,cod_situacao,centro_custo,desc_cc,cpf,data_admissao,tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade)
@@ -72,7 +80,6 @@ const ColaboradorModel = {
        d.tipo_contrato||null, d.data_fim_contrato||null,
        d.data_fim_estabilidade||null, d.descricao_estabilidade||null]
     ),
-
   update: (id, d) => {
     const sets = []; const p = []; let i = 1;
     ["chapa","nome","funcao","situacao","cod_situacao","centro_custo","desc_cc","cpf",
@@ -83,7 +90,6 @@ const ColaboradorModel = {
     sets.push("atualizado_em=NOW()"); p.push(id);
     return db.query(`UPDATE colaboradores SET ${sets.join(",")} WHERE id=$${i} RETURNING *`, p);
   },
-
   upsertBatch: async (lista) => {
     // Desduplicar a própria lista: quando há mesma chapa repetida,
     // prioriza o registro com cod_situacao != "D" (ativo/em exercício)
@@ -94,8 +100,9 @@ const ColaboradorModel = {
       if (!existente) {
         mapaLista.set(chave, item);
       } else {
-        const itemAtivo   = item.cod_situacao !== "D";
-        const existeAtivo = existente.cod_situacao !== "D";
+        // Prefere o que NÃO é demitido
+        const itemAtivo    = item.cod_situacao !== "D";
+        const existeAtivo  = existente.cod_situacao !== "D";
         if (itemAtivo && !existeAtivo) mapaLista.set(chave, item);
       }
     }
@@ -286,10 +293,12 @@ const DesligamentoModel = {
              c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
              c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
              c.data_admissao,
-             u.nome AS gestor_nome
+             u.nome AS gestor_nome,
+             us.nome AS superior_nome_atual
       FROM solicitacao_desligamento sd
-      LEFT JOIN colaboradores c ON sd.colaborador_id = c.id
-      LEFT JOIN usuarios u      ON sd.gestor_id = u.id
+      LEFT JOIN colaboradores c  ON sd.colaborador_id = c.id
+      LEFT JOIN usuarios u       ON sd.gestor_id = u.id
+      LEFT JOIN usuarios us      ON sd.superior_id = us.id
       WHERE sd.id=$1
     `, [id]),
 
@@ -312,12 +321,28 @@ const DesligamentoModel = {
 
   create: (dados, gestorId) =>
     db.transaction(async (client) => {
+      // Busca o superior vinculado na hierarquia para este gestor
+      // Considera centro_custo específico ou regra global (centro_custo IS NULL)
+      const hierResult = await client.query(`
+        SELECT h.superior_id, u.nome AS superior_nome
+        FROM hierarquia_aprovacao h
+        LEFT JOIN usuarios u ON u.id = h.superior_id
+        WHERE h.gestor_id = $1 AND h.ativo = true
+        ORDER BY
+          CASE WHEN h.centro_custo IS NOT NULL THEN 0 ELSE 1 END,
+          h.criado_em DESC
+        LIMIT 1
+      `, [gestorId]);
+
+      const superior_id   = hierResult.rows[0]?.superior_id   || null;
+      const superior_nome = hierResult.rows[0]?.superior_nome  || null;
+
       const { rows } = await client.query(
         `INSERT INTO solicitacao_desligamento
-           (colaborador_id, gestor_id, tipo, data_desligamento, data_aviso,
+           (colaborador_id, gestor_id, superior_id, superior_nome, tipo, data_desligamento, data_aviso,
             reducao_jornada, justificativa, observacoes, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'rascunho') RETURNING *`,
-        [dados.colaborador_id, gestorId, dados.tipo,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'rascunho') RETURNING *`,
+        [dados.colaborador_id, gestorId, superior_id, superior_nome, dados.tipo,
          dados.data_desligamento, dados.data_aviso || null,
          dados.reducao_jornada || false,
          dados.justificativa || null, dados.observacoes || null]
@@ -327,7 +352,7 @@ const DesligamentoModel = {
         `INSERT INTO solicitacao_desligamento_logs
            (solicitacao_id, usuario_id, acao, dados_depois)
          VALUES ($1,$2,'criado',$3)`,
-        [sol.id, gestorId, JSON.stringify(dados)]
+        [sol.id, gestorId, JSON.stringify({ ...dados, superior_id, superior_nome })]
       );
       return sol;
     }),
@@ -394,5 +419,7 @@ const DesligamentoModel = {
       "SELECT * FROM solicitacao_desligamento_anexos WHERE id=$1", [anexoId]
     ),
 };
+
+// ... todo o código do DesligamentoModel ...
 
 module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel, DesligamentoModel };
