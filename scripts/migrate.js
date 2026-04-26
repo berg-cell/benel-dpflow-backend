@@ -31,26 +31,32 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 
 -- ── Colaboradores ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS colaboradores (
-  id               SERIAL PRIMARY KEY,
-  chapa            VARCHAR(16)  NOT NULL UNIQUE,
-  nome             VARCHAR(200) NOT NULL,
-  funcao           VARCHAR(100),
-  situacao         VARCHAR(10)  NOT NULL DEFAULT 'Ativo' CHECK (situacao IN ('Ativo','Inativo')),
-  centro_custo     VARCHAR(20),
-  desc_cc          VARCHAR(100),
-  cpf              VARCHAR(14),
-  data_admissao    DATE,
-  tipo_contrato    VARCHAR(30),
-  data_fim_contrato DATE,
-  criado_em        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  atualizado_em    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id                    SERIAL PRIMARY KEY,
+  chapa                 VARCHAR(16)  NOT NULL UNIQUE,
+  nome                  VARCHAR(200) NOT NULL,
+  funcao                VARCHAR(100),
+  situacao              VARCHAR(10)  NOT NULL DEFAULT 'Ativo' CHECK (situacao IN ('Ativo','Inativo')),
+  cod_situacao          VARCHAR(5),
+  centro_custo          VARCHAR(20),
+  desc_cc               VARCHAR(100),
+  cpf                   VARCHAR(14),
+  data_admissao         DATE,
+  tipo_contrato         VARCHAR(30),
+  data_fim_contrato     DATE,
+  data_fim_estabilidade DATE,
+  descricao_estabilidade VARCHAR(200),
+  criado_em             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  atualizado_em         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- Garante colunas em bancos que já existiam antes dessa versão do migrate
-ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS cpf               VARCHAR(14);
-ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_admissao     DATE;
-ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS tipo_contrato     VARCHAR(30);
-ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_fim_contrato DATE;
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS cpf                    VARCHAR(14);
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_admissao          DATE;
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS tipo_contrato          VARCHAR(30);
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_fim_contrato      DATE;
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS cod_situacao           VARCHAR(5);
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS data_fim_estabilidade  DATE;
+ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS descricao_estabilidade VARCHAR(200);
 
 -- ── Eventos ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS eventos (
