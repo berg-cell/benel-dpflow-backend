@@ -52,13 +52,17 @@ const UsuarioModel = {
 const ColaboradorModel = {
   findAll: ({ situacao, busca, incluirDemitidos = false } = {}) => {
     let q = "SELECT * FROM colaboradores WHERE 1=1"; const p = []; let i = 1;
-    if (!incluirDemitidos) { q += ` AND (cod_situacao IS NULL OR cod_situacao <> 'D')`; }
+    if (!incluirDemitidos) {
+      q += ` AND (cod_situacao IS NULL OR cod_situacao <> 'D')`;
+    }
     if (situacao) { q += ` AND situacao=$${i++}`; p.push(situacao); }
     if (busca)    { q += ` AND (nome ILIKE $${i} OR chapa ILIKE $${i})`; p.push(`%${busca}%`); i++; }
     return db.query(q + " ORDER BY nome", p);
   },
+
   findById:    (id)    => db.query("SELECT * FROM colaboradores WHERE id=$1",    [id]),
   findByChapa: (chapa) => db.query("SELECT * FROM colaboradores WHERE chapa=$1", [chapa]),
+
   create: (d) =>
     db.query(
       `INSERT INTO colaboradores(chapa,nome,funcao,situacao,cod_situacao,centro_custo,desc_cc,cpf,data_admissao,tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade)
@@ -68,6 +72,7 @@ const ColaboradorModel = {
        d.tipo_contrato||null, d.data_fim_contrato||null,
        d.data_fim_estabilidade||null, d.descricao_estabilidade||null]
     ),
+
   update: (id, d) => {
     const sets = []; const p = []; let i = 1;
     ["chapa","nome","funcao","situacao","cod_situacao","centro_custo","desc_cc","cpf",
@@ -78,6 +83,7 @@ const ColaboradorModel = {
     sets.push("atualizado_em=NOW()"); p.push(id);
     return db.query(`UPDATE colaboradores SET ${sets.join(",")} WHERE id=$${i} RETURNING *`, p);
   },
+
   upsertBatch: async (lista) => {
     // Desduplicar a própria lista: quando há mesma chapa repetida,
     // prioriza o registro com cod_situacao != "D" (ativo/em exercício)
@@ -88,9 +94,8 @@ const ColaboradorModel = {
       if (!existente) {
         mapaLista.set(chave, item);
       } else {
-        // Prefere o que NÃO é demitido
-        const itemAtivo    = item.cod_situacao !== "D";
-        const existeAtivo  = existente.cod_situacao !== "D";
+        const itemAtivo   = item.cod_situacao !== "D";
+        const existeAtivo = existente.cod_situacao !== "D";
         if (itemAtivo && !existeAtivo) mapaLista.set(chave, item);
       }
     }
@@ -389,7 +394,5 @@ const DesligamentoModel = {
       "SELECT * FROM solicitacao_desligamento_anexos WHERE id=$1", [anexoId]
     ),
 };
-
-// ... todo o código do DesligamentoModel ...
 
 module.exports = { UsuarioModel, ColaboradorModel, EventoModel, BlocoModel, AuditoriaModel, DesligamentoModel };
