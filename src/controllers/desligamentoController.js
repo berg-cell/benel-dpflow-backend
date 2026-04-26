@@ -111,11 +111,25 @@ exports.aprovar = async (req, res) => {
     const r = await DesligamentoModel.findById(id);
     if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
     const sol = r.rows[0];
-    if (!ALCADA[sol.status]?.includes(req.usuario.perfil))
+
+    const perfil = req.usuario.perfil;
+    const userId = req.usuario.id;
+
+    // Verifica alçada pelo perfil
+    if (!ALCADA[sol.status]?.includes(perfil))
       return R.forbidden(res, "Você não tem permissão para agir neste status");
-    const novoStatus = await DesligamentoModel.avancarStatus(id, req.usuario.id, acao, observacao);
+
+    // Para 1ª alçada (superior): valida se é o superior vinculado na hierarquia
+    if (sol.status === "pendente_superior" && perfil !== "admin" && perfil !== "dp") {
+      if (!sol.superior_id)
+        return R.forbidden(res, "Esta solicitação não possui superior vinculado na hierarquia. Contate o administrador.");
+      if (sol.superior_id !== userId)
+        return R.forbidden(res, "Você não é o superior responsável por esta solicitação conforme a hierarquia cadastrada.");
+    }
+
+    const novoStatus = await DesligamentoModel.avancarStatus(id, userId, acao, observacao);
     await AuditoriaModel.registrar({
-      usuario_id: req.usuario.id, acao: `DESLIGAMENTO_${acao.toUpperCase()}`,
+      usuario_id: userId, acao: `DESLIGAMENTO_${acao.toUpperCase()}`,
       tabela: "solicitacao_desligamento", registro_id: id,
       dados_antes: { status: sol.status },
       dados_depois: { status: novoStatus, observacao },
