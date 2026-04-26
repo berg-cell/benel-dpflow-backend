@@ -50,8 +50,9 @@ const UsuarioModel = {
 
 // ── Colaborador ───────────────────────────────────────────────────────────────
 const ColaboradorModel = {
-  findAll: ({ situacao, busca } = {}) => {
+  findAll: ({ situacao, busca, incluirDemitidos = false } = {}) => {
     let q = "SELECT * FROM colaboradores WHERE 1=1"; const p = []; let i = 1;
+    if (!incluirDemitidos) { q += ` AND (cod_situacao IS NULL OR cod_situacao <> 'D')`; }
     if (situacao) { q += ` AND situacao=$${i++}`; p.push(situacao); }
     if (busca)    { q += ` AND (nome ILIKE $${i} OR chapa ILIKE $${i})`; p.push(`%${busca}%`); i++; }
     return db.query(q + " ORDER BY nome", p);
