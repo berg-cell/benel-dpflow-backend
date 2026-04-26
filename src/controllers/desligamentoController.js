@@ -147,3 +147,31 @@ exports.getAnexo = async (req, res) => {
     return R.success(res, r.rows[0]);
   } catch (e) { return R.error(res, e.message); }
 };
+
+exports.cancelar = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const r = await DesligamentoModel.findById(id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+    if (["cancelado","finalizado"].includes(sol.status))
+      return R.badRequest(res, `Não é possível cancelar uma solicitação com status "${sol.status}"`);
+    await db.query(
+      `UPDATE solicitacao_desligamento SET status='cancelado', atualizado_em=NOW() WHERE id=$1`, [id]
+    );
+    await db.query(
+      `INSERT INTO solicitacao_desligamento_logs(solicitacao_id,usuario_id,acao,observacao,dados_antes,dados_depois)
+       VALUES($1,$2,'cancelado',$3,$4,$5)`,
+      [id, req.usuario.id, "Cancelado pelo administrador",
+       JSON.stringify({ status: sol.status }),
+       JSON.stringify({ status: "cancelado" })]
+    );
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CANCELADO",
+      tabela: "solicitacao_desligamento", registro_id: id,
+      dados_antes: { status: sol.status }, dados_depois: { status: "cancelado" },
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, {}, "Solicitação cancelada com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
