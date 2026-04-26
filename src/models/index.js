@@ -60,13 +60,18 @@ const ColaboradorModel = {
   findByChapa: (chapa) => db.query("SELECT * FROM colaboradores WHERE chapa=$1", [chapa]),
   create: (d) =>
     db.query(
-      `INSERT INTO colaboradores(chapa,nome,funcao,situacao,centro_custo,desc_cc,cpf,data_admissao)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [d.chapa, d.nome, d.funcao||null, d.situacao||"Ativo", d.centro_custo||null, d.desc_cc||null, d.cpf||null, d.data_admissao||null]
+      `INSERT INTO colaboradores(chapa,nome,funcao,situacao,cod_situacao,centro_custo,desc_cc,cpf,data_admissao,tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [d.chapa, d.nome, d.funcao||null, d.situacao||"Ativo", d.cod_situacao||null,
+       d.centro_custo||null, d.desc_cc||null, d.cpf||null, d.data_admissao||null,
+       d.tipo_contrato||null, d.data_fim_contrato||null,
+       d.data_fim_estabilidade||null, d.descricao_estabilidade||null]
     ),
   update: (id, d) => {
     const sets = []; const p = []; let i = 1;
-    ["chapa","nome","funcao","situacao","centro_custo","desc_cc","cpf","data_admissao"].forEach(c => {
+    ["chapa","nome","funcao","situacao","cod_situacao","centro_custo","desc_cc","cpf",
+     "data_admissao","tipo_contrato","data_fim_contrato",
+     "data_fim_estabilidade","descricao_estabilidade"].forEach(c => {
       if (d[c] !== undefined) { sets.push(`${c}=$${i++}`); p.push(d[c] || null); }
     });
     sets.push("atualizado_em=NOW()"); p.push(id);
