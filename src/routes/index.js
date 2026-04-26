@@ -15,6 +15,7 @@ const auditoriaCtrl   = require("../controllers/auditoriaController");
 const desligamentoCtrl = require("../controllers/desligamentoController");
 const ocorrenciasCtrl     = require("../controllers/ocorrenciasController");
 const hierarquiaCtrl      = require("../controllers/hierarquiaAlcadasController");
+const centroCustoCtrl     = require("../controllers/centroCustoController");
 
 const db = require("../config/database");
 
@@ -131,6 +132,10 @@ router.put( "/desligamentos/:id/aprovar",    autenticar, autorizar("superior","d
 router.put( "/desligamentos/:id/cancelar",        autenticar, autorizar("dp","admin"), auditLog("CANCELAR_DESLIGAMENTO"), desligamentoCtrl.cancelar);
 router.post("/desligamentos/:id/anexos",          autenticar,                                    desligamentoCtrl.addAnexo);
 router.get( "/desligamentos/:id/anexos/:anexoId", autenticar,                                    desligamentoCtrl.getAnexo);
+
+// ── Centro de Custo ───────────────────────────────────────────────────────────
+router.get( "/centros-custo",        autenticar,                             centroCustoCtrl.listar);
+router.post("/centros-custo/importar", autenticar, autorizar("dp","admin"),  centroCustoCtrl.upsertBatch);
 
 // ── Hierarquia ───────────────────────────────────────────────────────────────
 router.get( "/hierarquia",      autenticar, autorizar("dp","admin"),                       hierarquiaCtrl.listarHierarquia);
