@@ -48,9 +48,11 @@ exports.validarColaborador = async (req, res) => {
 
 
 const ALCADA = {
-  pendente_superior: ["superior", "admin"],
-  pendente_dp:       ["dp", "admin"],
+  pendente_superior: ["superior", "dp", "admin"],
+  // 2ª alçada — descomente quando quiser ativar:
+  // pendente_dp:    ["dp", "admin"],
   aprovado:          ["dp", "admin"],
+  ajuste_solicitado: ["gestor", "dp", "admin"],
 };
 
 exports.listar = async (req, res) => {
