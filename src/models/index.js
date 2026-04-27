@@ -381,7 +381,10 @@ const DesligamentoModel = {
       );
       if (!rowCount) throw Object.assign(new Error("Solicitação não encontrada"), { status: 404 });
       const mapa = {
-        pendente_superior: "pendente_dp",
+        // Alçada ativa: superior → aprovado direto
+        pendente_superior: "aprovado",
+        // 2ª alçada (desativada por ora, mantida para uso futuro):
+        // pendente_superior: "pendente_dp",
         pendente_dp:       "aprovado",
       };
       let novoStatus = rows[0].status;
