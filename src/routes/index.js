@@ -16,6 +16,7 @@ const desligamentoCtrl = require("../controllers/desligamentoController");
 const ocorrenciasCtrl     = require("../controllers/ocorrenciasController");
 const hierarquiaCtrl      = require("../controllers/hierarquiaAlcadasController");
 const centroCustoCtrl     = require("../controllers/centroCustoController");
+const autorizacaoCtrl     = require("../controllers/autorizacaoController");
 
 const db = require("../config/database");
 
@@ -134,8 +135,14 @@ router.post("/desligamentos/:id/anexos",          autenticar,                   
 router.get( "/desligamentos/:id/anexos/:anexoId", autenticar,                                    desligamentoCtrl.getAnexo);
 
 // ── Centro de Custo ───────────────────────────────────────────────────────────
-router.get( "/centros-custo",        autenticar,                             centroCustoCtrl.listar);
-router.post("/centros-custo/importar", autenticar, autorizar("dp","admin"),  centroCustoCtrl.upsertBatch);
+router.get( "/centros-custo",          autenticar,                             centroCustoCtrl.listar);
+router.post("/centros-custo/importar", autenticar, autorizar("dp","admin"),     centroCustoCtrl.upsertBatch);
+
+// ── Autorização de Desconto ───────────────────────────────────────────────────
+router.get( "/autorizacoes",              autenticar,                                             autorizacaoCtrl.listar);
+router.post("/autorizacoes",              autenticar, autorizar("gestor","dp","admin"),           autorizacaoCtrl.criar);
+router.post("/autorizacoes/:id/anexo",    autenticar,                                             autorizacaoCtrl.addAnexo);
+router.put( "/autorizacoes/:id/cancelar", autenticar, autorizar("dp","admin"),                   autorizacaoCtrl.cancelar);
 
 // ── Hierarquia ───────────────────────────────────────────────────────────────
 router.get( "/hierarquia",      autenticar, autorizar("dp","admin"),                       hierarquiaCtrl.listarHierarquia);
