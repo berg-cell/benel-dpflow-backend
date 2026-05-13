@@ -147,6 +147,31 @@ CREATE TABLE IF NOT EXISTS audit_log (
   criado_em     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+-- ── Autorização de Desconto ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS autorizacao_desconto (
+  id                  SERIAL PRIMARY KEY,
+  colaborador_id      INTEGER       REFERENCES colaboradores(id),
+  colaborador_nome    VARCHAR(200),
+  colaborador_cpf     VARCHAR(14),
+  gestor_id           INTEGER       REFERENCES usuarios(id),
+  gestor_nome         VARCHAR(150),
+  valor_total         NUMERIC(12,2) NOT NULL,
+  num_parcelas        SMALLINT      NOT NULL DEFAULT 1,
+  mes_inicio          VARCHAR(2)    NOT NULL,
+  ano_inicio          VARCHAR(4)    NOT NULL,
+  data_ocorrido       DATE,
+  descricao_prejuizo  TEXT,
+  observacoes         TEXT,
+  status              VARCHAR(20)   NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','anexado','cancelado')),
+  anexo_nome          VARCHAR(255),
+  anexo_dados         TEXT,
+  criado_em           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  atualizado_em       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_autorizacao_gestor      ON autorizacao_desconto(gestor_id);
+CREATE INDEX IF NOT EXISTS idx_autorizacao_colaborador ON autorizacao_desconto(colaborador_id);
+CREATE INDEX IF NOT EXISTS idx_autorizacao_status      ON autorizacao_desconto(status);
+
 -- ── Centro de Custo ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS centro_custo (
   id          SERIAL PRIMARY KEY,
