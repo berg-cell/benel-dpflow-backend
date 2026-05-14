@@ -340,12 +340,13 @@ const DesligamentoModel = {
       const { rows } = await client.query(
         `INSERT INTO solicitacao_desligamento
            (colaborador_id, gestor_id, superior_id, superior_nome, tipo, data_desligamento, data_aviso,
-            reducao_jornada, justificativa, observacoes, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'rascunho') RETURNING *`,
+            reducao_jornada, justificativa, observacoes, pedido_anexo_nome, pedido_anexo_dados, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'rascunho') RETURNING *`,
         [dados.colaborador_id, gestorId, superior_id, superior_nome, dados.tipo,
          dados.data_desligamento, dados.data_aviso || null,
          dados.reducao_jornada || false,
-         dados.justificativa || null, dados.observacoes || null]
+         dados.justificativa || null, dados.observacoes || null,
+         dados.pedido_anexo_nome || null, dados.pedido_anexo_base64 || null]
       );
       const sol = rows[0];
       await client.query(
