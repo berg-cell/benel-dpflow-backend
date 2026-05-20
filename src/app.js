@@ -25,7 +25,7 @@ app.use(helmet({
       scriptSrc:      ["'self'"],
       styleSrc:       ["'self'", "'unsafe-inline'"],
       imgSrc:         ["'self'", "data:", "blob:"],
-      connectSrc:     ["'self'"],
+      connectSrc:     ["'self'", "https://benel-dpflow-backend.vercel.app", "https://benel-dpflow-5jas.vercel.app"],
       frameAncestors: ["'none'"],
       baseUri:        ["'self'"],
       formAction:     ["'self'"],
