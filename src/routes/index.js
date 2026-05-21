@@ -162,4 +162,14 @@ router.post("/ocorrencias",              autenticar, autorizar("gestor","dp","ad
 router.put( "/ocorrencias/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), auditLog("CANCELAR_OCORRENCIA"), ocorrenciasCtrl.cancelar);
 router.post("/ocorrencias/:id/anexos",   autenticar,                                  auditLog("ANEXO_OCORRENCIA"),    ocorrenciasCtrl.addAnexo);
 
+// ── Plano de Saúde ────────────────────────────────────────────────────────────
+const planoSaudeCtrl = require("../controllers/planoSaudeController");
+
+router.get( "/plano-saude",                     autenticar,                                  planoSaudeCtrl.listar);
+router.get( "/plano-saude/:id",                 autenticar,                                  planoSaudeCtrl.buscarPorId);
+router.post("/plano-saude",                     autenticar, autorizar("gestor","dp","admin"), planoSaudeCtrl.criar);
+router.post("/plano-saude/:id/anexos",          autenticar,                                  planoSaudeCtrl.addAnexo);
+router.get( "/plano-saude/:id/anexos/:anexoId", autenticar,                                  planoSaudeCtrl.getAnexo);
+router.put( "/plano-saude/:id/cancelar",        autenticar, autorizar("dp","admin"),         planoSaudeCtrl.cancelar);
+
 module.exports = router;
