@@ -67,19 +67,27 @@ exports.importar = async (req, res) => {
     const lista = req.body.colaboradores || req.body.lista;
     if (!Array.isArray(lista) || lista.length === 0)
       return R.badRequest(res, "Lista de colaboradores vazia");
+    // Normaliza chaves para minúsculo (CSV do RM vem em maiúsculo)
+    const normKeys = (obj) => {
+      const n = {};
+      for (const k of Object.keys(obj)) n[k.toLowerCase()] = obj[k];
+      return n;
+    };
+
     const listaNorm = lista
+      .map(r => normKeys(r))
       .filter(r => r.chapa && r.nome)
       .map(r => ({
         chapa:                  String(r.chapa || "").trim(),
         nome:                   String(r.nome || "").trim(),
-        funcao:                 r.funcao || null,
+        funcao:                 r.funcao || r.desc_funcao || null,
         situacao:               ["Ativo","Inativo"].includes(r.situacao) ? r.situacao : "Ativo",
         cod_situacao:           r.cod_situacao ? String(r.cod_situacao).trim() : null,
         centro_custo:           r.centro_custo || null,
         desc_cc:                r.desc_cc || null,
         cpf:                    r.cpf || null,
         data_admissao:          r.data_admissao && r.data_admissao !== "" ? r.data_admissao : null,
-        tipo_contrato:          r.tipo_contrato || null,
+        tipo_contrato:          r.tipo_contrato || r.cod_contrato || null,
         data_fim_contrato:      r.data_fim_contrato && r.data_fim_contrato !== "" ? r.data_fim_contrato : null,
         data_fim_estabilidade:  r.data_fim_estabilidade && r.data_fim_estabilidade !== "" ? r.data_fim_estabilidade : null,
         descricao_estabilidade: r.descricao_estabilidade || null,
