@@ -73,18 +73,32 @@ const ColaboradorModel = {
   findByChapa: (chapa) => db.query("SELECT * FROM colaboradores WHERE chapa=$1", [chapa]),
   create: (d) =>
     db.query(
-      `INSERT INTO colaboradores(chapa,nome,funcao,situacao,cod_situacao,centro_custo,desc_cc,cpf,data_admissao,tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      `INSERT INTO colaboradores(
+        chapa,nome,funcao,situacao,cod_situacao,centro_custo,desc_cc,cpf,data_admissao,
+        tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade,
+        rg,rg_orgao,rg_uf,ctps,ctps_serie,logradouro,numero,complemento,
+        bairro,cidade,uf,cep,telefone1,sexo,estado_civil,nome_mae,pis
+       ) VALUES(
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+        $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+       ) RETURNING *`,
       [d.chapa, d.nome, d.funcao||null, d.situacao||"Ativo", d.cod_situacao||null,
        d.centro_custo||null, d.desc_cc||null, d.cpf||null, d.data_admissao||null,
        d.tipo_contrato||null, d.data_fim_contrato||null,
-       d.data_fim_estabilidade||null, d.descricao_estabilidade||null]
+       d.data_fim_estabilidade||null, d.descricao_estabilidade||null,
+       d.rg||null, d.rg_orgao||null, d.rg_uf||null,
+       d.ctps||null, d.ctps_serie||null, d.logradouro||null, d.numero||null,
+       d.complemento||null, d.bairro||null, d.cidade||null, d.uf||null,
+       d.cep||null, d.telefone1||null, d.sexo||null, d.estado_civil||null,
+       d.nome_mae||null, d.pis||null]
     ),
   update: (id, d) => {
     const sets = []; const p = []; let i = 1;
     ["chapa","nome","funcao","situacao","cod_situacao","centro_custo","desc_cc","cpf",
      "data_admissao","tipo_contrato","data_fim_contrato",
-     "data_fim_estabilidade","descricao_estabilidade"].forEach(c => {
+     "data_fim_estabilidade","descricao_estabilidade",
+     "rg","rg_orgao","rg_uf","ctps","ctps_serie","logradouro","numero","complemento",
+     "bairro","cidade","uf","cep","telefone1","sexo","estado_civil","nome_mae","pis"].forEach(c => {
       if (d[c] !== undefined) { sets.push(`${c}=$${i++}`); p.push(d[c] || null); }
     });
     sets.push("atualizado_em=NOW()"); p.push(id);
