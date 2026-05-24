@@ -83,6 +83,23 @@ exports.importar = async (req, res) => {
         data_fim_contrato:      r.data_fim_contrato && r.data_fim_contrato !== "" ? r.data_fim_contrato : null,
         data_fim_estabilidade:  r.data_fim_estabilidade && r.data_fim_estabilidade !== "" ? r.data_fim_estabilidade : null,
         descricao_estabilidade: r.descricao_estabilidade || null,
+        rg:                     r.rg || null,
+        rg_orgao:               r.rg_orgao || r.rg_orgemissor || null,
+        rg_uf:                  r.rg_uf || null,
+        ctps:                   r.ctps || null,
+        ctps_serie:             r.ctps_serie || null,
+        logradouro:             r.logradouro || r.rua_func || null,
+        numero:                 r.numero || r.numero_func || null,
+        complemento:            r.complemento || r.compl_func || null,
+        bairro:                 r.bairro || null,
+        cidade:                 r.cidade || null,
+        uf:                     r.uf || null,
+        cep:                    r.cep || null,
+        telefone1:              r.telefone1 || null,
+        sexo:                   r.sexo || null,
+        estado_civil:           r.estado_civil || r.estadocivil || null,
+        nome_mae:               r.nome_mae || null,
+        pis:                    r.pis || null,
       }));
     if (listaNorm.length === 0)
       return R.badRequest(res, "Nenhum registro válido para importar");
