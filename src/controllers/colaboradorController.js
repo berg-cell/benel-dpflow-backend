@@ -108,6 +108,12 @@ exports.importar = async (req, res) => {
         estado_civil:           r.estado_civil || r.estadocivil || null,
         nome_mae:               r.nome_mae || null,
         pis:                    r.pis || null,
+        posicao_escala:         r.posicao_escala || null,
+        motorista_lider:        r.motorista_lider || null,
+        munkeiro:               r.munkeiro || null,
+        prancheiro:             r.prancheiro || null,
+        tamanho_macacao:        r.tamanho_macacao || null,
+        tamanho_bota:           r.tamanho_bota || null,
       }));
     if (listaNorm.length === 0)
       return R.badRequest(res, "Nenhum registro válido para importar");
