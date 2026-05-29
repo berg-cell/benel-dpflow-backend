@@ -172,4 +172,15 @@ router.post("/plano-saude/:id/anexos",          autenticar,                     
 router.get( "/plano-saude/:id/anexos/:anexoId", autenticar,                                  planoSaudeCtrl.getAnexo);
 router.put( "/plano-saude/:id/cancelar",        autenticar, autorizar("dp","admin"),         planoSaudeCtrl.cancelar);
 
+// Adicionar no src/routes/index.js ANTES de module.exports = router;
+
+// ── Atualização Cadastral ─────────────────────────────────────────────────────
+const atualizacaoCadastralCtrl = require("../controllers/atualizacaoCadastralController");
+
+router.get( "/atualizacao-cadastral",          autenticar,                                  atualizacaoCadastralCtrl.listar);
+router.get( "/atualizacao-cadastral/:id",       autenticar,                                  atualizacaoCadastralCtrl.buscarPorId);
+router.post("/atualizacao-cadastral",           autenticar, autorizar("gestor","dp","admin"), atualizacaoCadastralCtrl.criar);
+router.put( "/atualizacao-cadastral/:id/aprovar", autenticar, autorizar("dp","admin"),        atualizacaoCadastralCtrl.aprovar);
+router.put( "/atualizacao-cadastral/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), atualizacaoCadastralCtrl.cancelar);
+
 module.exports = router;
