@@ -13,7 +13,7 @@ exports.listar = async (req, res) => {
              c.rg, c.rg_orgao, c.rg_uf, c.nome_mae, c.estado_civil,
              c.pis, c.ctps, c.ctps_serie,
              c.logradouro, c.complemento, c.bairro, c.cidade, c.uf, c.cep,
-             c.telefone1, c.telefone2, c.telefone3
+             c.telefone1
       FROM plano_saude_solicitacoes pss
       JOIN colaboradores c ON pss.colaborador_id = c.id
       ORDER BY pss.criado_em DESC
