@@ -1,7 +1,7 @@
 // src/controllers/planoSaudeController.js
 "use strict";
 const db = require("../config/database");
-const { ok, fail } = require("../utils/response");
+const R = require("../utils/response");
 
 // ── Listar solicitações ───────────────────────────────────────────────────────
 exports.listar = async (req, res) => {
@@ -13,14 +13,14 @@ exports.listar = async (req, res) => {
              c.rg, c.rg_orgao, c.rg_uf, c.nome_mae, c.estado_civil,
              c.pis, c.ctps, c.ctps_serie,
              c.logradouro, c.complemento, c.bairro, c.cidade, c.uf, c.cep,
-             c.telefone1
+             c.telefone1, c.telefone2, c.telefone3
       FROM plano_saude_solicitacoes pss
       JOIN colaboradores c ON pss.colaborador_id = c.id
       ORDER BY pss.criado_em DESC
     `);
-    return ok(res, rows);
+    return R.success(res, rows);
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
 
@@ -35,21 +35,21 @@ exports.buscarPorId = async (req, res) => {
              c.rg, c.rg_orgao, c.rg_uf, c.nome_mae, c.estado_civil,
              c.pis, c.ctps, c.ctps_serie,
              c.logradouro, c.complemento, c.bairro, c.cidade, c.uf, c.cep,
-             c.telefone1
+             c.telefone1, c.telefone2, c.telefone3
       FROM plano_saude_solicitacoes pss
       JOIN colaboradores c ON pss.colaborador_id = c.id
       WHERE pss.id = $1
     `, [id]);
-    if (!rows[0]) return fail(res, "Solicitação não encontrada", 404);
+    if (!rows[0]) return R.notFound(res, "Solicitação não encontrada");
 
     // Buscar anexos
     const { rows: anexos } = await db.query(
       `SELECT id, nome_arquivo, tipo_anexo, criado_em FROM plano_saude_anexos WHERE solicitacao_id = $1 ORDER BY criado_em`,
       [id]
     );
-    return ok(res, { ...rows[0], anexos });
+    return R.success(res, { ...rows[0], anexos });
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
 
@@ -64,7 +64,7 @@ exports.criar = async (req, res) => {
     } = req.body;
 
     if (!tipo || !movimentacao || !colaborador_id)
-      return fail(res, "tipo, movimentacao e colaborador_id são obrigatórios", 400);
+      return R.badRequest(res, "tipo, movimentacao e colaborador_id são obrigatórios");
 
     const { rows } = await db.query(`
       INSERT INTO plano_saude_solicitacoes
@@ -81,9 +81,9 @@ exports.criar = async (req, res) => {
       dep_data_casamento || null, dep_grau_parentesco || null, dep_nome_mae || null,
     ]);
 
-    return ok(res, rows[0], 201);
+    return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
 
@@ -94,16 +94,16 @@ exports.addAnexo = async (req, res) => {
     const { nome_arquivo, tipo_anexo, dados_base64 } = req.body;
 
     if (!nome_arquivo || !dados_base64)
-      return fail(res, "nome_arquivo e dados_base64 são obrigatórios", 400);
+      return R.badRequest(res, "nome_arquivo e dados_base64 são obrigatórios");
 
     const { rows } = await db.query(`
       INSERT INTO plano_saude_anexos (solicitacao_id, nome_arquivo, tipo_anexo, dados_base64)
       VALUES ($1, $2, $3, $4) RETURNING id, nome_arquivo, tipo_anexo, criado_em
     `, [id, nome_arquivo, tipo_anexo || null, dados_base64]);
 
-    return ok(res, rows[0], 201);
+    return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
 
@@ -115,10 +115,10 @@ exports.getAnexo = async (req, res) => {
       `SELECT * FROM plano_saude_anexos WHERE id=$1 AND solicitacao_id=$2`,
       [anexoId, id]
     );
-    if (!rows[0]) return fail(res, "Anexo não encontrado", 404);
-    return ok(res, rows[0]);
+    if (!rows[0]) return R.notFound(res, "Anexo não encontrado");
+    return R.success(res, rows[0]);
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
 
@@ -130,8 +130,8 @@ exports.cancelar = async (req, res) => {
       `UPDATE plano_saude_solicitacoes SET status='cancelado', atualizado_em=NOW() WHERE id=$1`,
       [id]
     );
-    return ok(res, { message: "Cancelado com sucesso" });
+    return R.success(res, { message: "Cancelado com sucesso" });
   } catch (e) {
-    return fail(res, e.message, 500);
+    return R.error(res, e.message);
   }
 };
