@@ -2,6 +2,7 @@
 "use strict";
 const db = require("../config/database");
 const R  = require("../utils/response");
+const tg = require("../services/telegram");
 
 exports.listar = async (req, res) => {
   try {
@@ -38,6 +39,16 @@ exports.criar = async (req, res) => {
        mes_inicio, ano_inicio,
        data_ocorrido || null, descricao_prejuizo || null, observacoes || null]
     );
+
+    // Notificação Telegram
+    tg.notificar(req.usuario.id, "autorizacao_desconto", {
+      colaborador_nome: colaborador_nome,
+      solicitante:      req.usuario.nome,
+      tipo:             `${num_parcelas || 1}x parcela(s)`,
+      motivo:           descricao_prejuizo,
+      observacao:       observacoes,
+    }).catch(() => {});
+
     return R.created(res, r.rows[0], "Autorização criada com sucesso");
   } catch (e) { return R.error(res, e.message); }
 };
