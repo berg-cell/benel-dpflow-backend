@@ -2,6 +2,7 @@
 "use strict";
 const db = require("../config/database");
 const R  = require("../utils/response");
+const tg = require("../services/telegram");
 
 // ── Listar ────────────────────────────────────────────────────────────────────
 exports.listar = async (req, res) => {
@@ -11,7 +12,6 @@ exports.listar = async (req, res) => {
     const params = [];
     let i = 1;
 
-    // Gestor só vê os seus
     if (req.usuario.perfil === "gestor") {
       where.push(`o.gestor_id = $${i++}`);
       params.push(req.usuario.id);
@@ -55,7 +55,6 @@ exports.criar = async (req, res) => {
       motivo, data_ocorrencia, data_inicio, dias_suspensao
     } = req.body;
 
-    // Buscar ID real do colaborador pelo chapa
     let colaborador_id = req.body.colaborador_id;
     if (chapa) {
       const cr = await db.query(
@@ -65,7 +64,6 @@ exports.criar = async (req, res) => {
       if (cr.rowCount > 0) colaborador_id = cr.rows[0].id;
     }
 
-    // Calcular data_fim para suspensão
     let data_fim = null;
     if (tipo === "SUSPENSAO" && data_inicio && dias_suspensao) {
       const d = new Date(data_inicio);
@@ -88,6 +86,16 @@ exports.criar = async (req, res) => {
       data_inicio || null, data_fim,
       dias_suspensao || null
     ]);
+
+    // Notificação Telegram
+    tg.notificar(req.usuario.id, "ocorrencia", {
+      colaborador_nome: nome_colaborador,
+      chapa:            chapa,
+      funcao:           secao,
+      solicitante:      req.usuario.nome,
+      tipo:             tipo === "ADVERTENCIA" ? "Advertência" : `Suspensão (${dias_suspensao} dia(s))`,
+      motivo:           motivo,
+    }).catch(() => {});
 
     return R.created(res, r.rows[0], "Ocorrência registrada com sucesso");
   } catch (e) { return R.error(res, e.message); }
@@ -142,9 +150,6 @@ exports.cancelar = async (req, res) => {
 };
 
 // ── Exportar CSV TOTVS RM ─────────────────────────────────────────────────────
-// Layout: PFUNC.CHAPA ; PANOTAC.NROANOTACAO ; PANOTAC.TEXTO ; PANOTAC.DTANOTACAO ; PANOTAC.DTRESOLUCAO ; PANOTAC.TIPO
-// Advertência = NROANOTACAO:10, TIPO:10
-// Suspensão   = NROANOTACAO:11, TIPO:11
 exports.exportar = async (req, res) => {
   try {
     const r = await db.query(`
@@ -172,21 +177,16 @@ exports.exportar = async (req, res) => {
       const texto       = `/@${oc.motivo}@/`;
       const dtAnotacao  = formatData(oc.data_ocorrencia);
       const dtResolucao = oc.data_fim ? formatData(oc.data_fim) : "";
-
       return [chapa, nroAnotacao, texto, dtAnotacao, dtResolucao, tipo].join(";");
     });
 
-    // Registrar exportação sem bloquear reexportação
     const ids = r.rows.map(o => o.id);
     await db.query(`
       UPDATE ocorrencias_disciplinares
-      SET flag_exportado = TRUE,
-          data_exportacao = NOW(), exportado_por = $1,
-          atualizado_em = NOW()
+      SET flag_exportado = TRUE, data_exportacao = NOW(), exportado_por = $1, atualizado_em = NOW()
       WHERE id = ANY($2)
     `, [req.usuario.id, ids]);
 
-    // Salvar log
     await db.query(`
       INSERT INTO log_exportacoes_ocorrencias (usuario_id, usuario_nome, quantidade, ids_exportados)
       VALUES ($1, $2, $3, $4)
