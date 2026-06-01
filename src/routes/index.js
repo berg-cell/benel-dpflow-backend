@@ -183,4 +183,7 @@ router.post("/atualizacao-cadastral",           autenticar, autorizar("gestor","
 router.put( "/atualizacao-cadastral/:id/aprovar", autenticar, autorizar("dp","admin"),        atualizacaoCadastralCtrl.aprovar);
 router.put( "/atualizacao-cadastral/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), atualizacaoCadastralCtrl.cancelar);
 
+const telegramCtrl = require("../controllers/telegramController");
+router.post("/telegram/webhook", telegramCtrl.webhook);
+
 module.exports = router;
