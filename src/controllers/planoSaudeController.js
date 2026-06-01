@@ -2,6 +2,7 @@
 "use strict";
 const db = require("../config/database");
 const R = require("../utils/response");
+const tg = require("../services/telegram");
 
 // ── Listar solicitações ───────────────────────────────────────────────────────
 exports.listar = async (req, res) => {
@@ -13,7 +14,7 @@ exports.listar = async (req, res) => {
              c.rg, c.rg_orgao, c.rg_uf, c.nome_mae, c.estado_civil,
              c.pis, c.ctps, c.ctps_serie,
              c.logradouro, c.complemento, c.bairro, c.cidade, c.uf, c.cep,
-             c.telefone1
+             c.telefone1, c.telefone2, c.telefone3
       FROM plano_saude_solicitacoes pss
       JOIN colaboradores c ON pss.colaborador_id = c.id
       ORDER BY pss.criado_em DESC
@@ -35,7 +36,7 @@ exports.buscarPorId = async (req, res) => {
              c.rg, c.rg_orgao, c.rg_uf, c.nome_mae, c.estado_civil,
              c.pis, c.ctps, c.ctps_serie,
              c.logradouro, c.complemento, c.bairro, c.cidade, c.uf, c.cep,
-             c.telefone1
+             c.telefone1, c.telefone2, c.telefone3
       FROM plano_saude_solicitacoes pss
       JOIN colaboradores c ON pss.colaborador_id = c.id
       WHERE pss.id = $1
@@ -81,6 +82,21 @@ exports.criar = async (req, res) => {
       dep_data_casamento || null, dep_grau_parentesco || null, dep_nome_mae || null,
     ]);
 
+    // Notificação Telegram
+    const { rows: colabNotif } = await db.query(
+      "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
+      [colaborador_id]
+    );
+    tg.notificar(req.usuario.id, "plano_saude", {
+      colaborador_nome: colabNotif[0]?.nome,
+      chapa:            colabNotif[0]?.chapa,
+      funcao:           colabNotif[0]?.funcao,
+      centro_custo:     colabNotif[0]?.centro_custo,
+      desc_cc:          colabNotif[0]?.desc_cc,
+      tipo:             tipo,
+      motivo:           movimentacao,
+    }).catch(() => {});
+
     return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
     return R.error(res, e.message);
@@ -100,6 +116,21 @@ exports.addAnexo = async (req, res) => {
       INSERT INTO plano_saude_anexos (solicitacao_id, nome_arquivo, tipo_anexo, dados_base64)
       VALUES ($1, $2, $3, $4) RETURNING id, nome_arquivo, tipo_anexo, criado_em
     `, [id, nome_arquivo, tipo_anexo || null, dados_base64]);
+
+    // Notificação Telegram
+    const { rows: colabNotif } = await db.query(
+      "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
+      [colaborador_id]
+    );
+    tg.notificar(req.usuario.id, "plano_saude", {
+      colaborador_nome: colabNotif[0]?.nome,
+      chapa:            colabNotif[0]?.chapa,
+      funcao:           colabNotif[0]?.funcao,
+      centro_custo:     colabNotif[0]?.centro_custo,
+      desc_cc:          colabNotif[0]?.desc_cc,
+      tipo:             tipo,
+      motivo:           movimentacao,
+    }).catch(() => {});
 
     return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
