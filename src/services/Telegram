@@ -1,0 +1,93 @@
+// src/services/telegram.js
+"use strict";
+const db = require("../config/database");
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const API       = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+// ── Enviar mensagem ───────────────────────────────────────────────────────────
+async function enviarMensagem(chatId, texto) {
+  if (!BOT_TOKEN) return; // Telegram não configurado
+  try {
+    await fetch(`${API}/sendMessage`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id:    chatId,
+        text:       texto,
+        parse_mode: "HTML",
+      }),
+    });
+  } catch (e) {
+    console.error("[Telegram] Falha ao enviar mensagem:", e.message);
+  }
+}
+
+// ── Buscar chat_id do usuário pelo ID ─────────────────────────────────────────
+async function getChatId(usuarioId) {
+  try {
+    const { rows } = await db.query(
+      "SELECT telegram_chat_id FROM usuarios WHERE id=$1", [usuarioId]
+    );
+    return rows[0]?.telegram_chat_id || null;
+  } catch { return null; }
+}
+
+// ── Notificar usuário sobre nova solicitação ──────────────────────────────────
+async function notificar(usuarioId, tipo, dados) {
+  const chatId = await getChatId(usuarioId);
+  if (!chatId) return; // Usuário não vinculou o Telegram
+
+  const emojis = {
+    desligamento:         "🔴",
+    plano_saude:          "💊",
+    atualizacao_cadastral:"📋",
+    ocorrencia:           "⚠️",
+  };
+
+  const labels = {
+    desligamento:         "Desligamento",
+    plano_saude:          "Plano de Saúde",
+    atualizacao_cadastral:"Atualização Cadastral",
+    ocorrencia:           "Ocorrência Disciplinar",
+  };
+
+  const emoji = emojis[tipo] || "📌";
+  const label = labels[tipo] || tipo;
+
+  const linhas = [
+    `${emoji} <b>Nova solicitação — ${label}</b>`,
+    ``,
+    `👤 <b>Colaborador:</b> ${dados.colaborador_nome || "—"}`,
+    dados.chapa        ? `🪪 <b>Matrícula:</b> ${dados.chapa}` : null,
+    dados.funcao       ? `💼 <b>Função:</b> ${dados.funcao}` : null,
+    dados.centro_custo ? `🏢 <b>CC:</b> ${dados.centro_custo} — ${dados.desc_cc || ""}` : null,
+    dados.tipo         ? `📌 <b>Tipo:</b> ${dados.tipo}` : null,
+    dados.motivo       ? `📝 <b>Motivo:</b> ${dados.motivo}` : null,
+    dados.observacao   ? `💬 <b>Obs:</b> ${dados.observacao}` : null,
+    ``,
+    `🕐 ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
+    ``,
+    `🔗 <a href="https://benel-dpflow-5jas.vercel.app">Abrir DP Flow</a>`,
+  ].filter(l => l !== null).join("\n");
+
+  await enviarMensagem(chatId, linhas);
+}
+
+// ── Vincular chat_id ao usuário (chamado pelo webhook do bot) ─────────────────
+async function vincularChatId(email, chatId) {
+  await db.query(
+    "UPDATE usuarios SET telegram_chat_id=$1, atualizado_em=NOW() WHERE LOWER(email)=LOWER($2)",
+    [String(chatId), email.trim()]
+  );
+}
+
+// ── Desvincular ───────────────────────────────────────────────────────────────
+async function desvincularChatId(chatId) {
+  await db.query(
+    "UPDATE usuarios SET telegram_chat_id=NULL, atualizado_em=NOW() WHERE telegram_chat_id=$1",
+    [String(chatId)]
+  );
+}
+
+module.exports = { enviarMensagem, notificar, vincularChatId, desvincularChatId };
