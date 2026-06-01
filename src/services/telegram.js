@@ -30,12 +30,16 @@ function montarTexto(tipo, dados) {
     plano_saude:           "💊",
     atualizacao_cadastral: "📋",
     ocorrencia:            "⚠️",
+    autorizacao_desconto:  "💰",
+    pagamento:             "💵",
   };
   const labels = {
     desligamento:          "Desligamento",
     plano_saude:           "Plano de Saúde",
     atualizacao_cadastral: "Atualização Cadastral",
     ocorrencia:            "Ocorrência Disciplinar",
+    autorizacao_desconto:  "Autorização de Desconto",
+    pagamento:             "Solicitação de Pagamento",
   };
 
   const emoji = emojis[tipo] || "📌";
