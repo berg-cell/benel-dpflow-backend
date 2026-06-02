@@ -87,15 +87,19 @@ exports.criar = async (req, res) => {
       "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
       [colaborador_id]
     );
-    tg.notificar(req.usuario.id, "plano_saude", {
-      colaborador_nome: colabNotif[0]?.nome,
-      chapa:            colabNotif[0]?.chapa,
-      funcao:           colabNotif[0]?.funcao,
-      centro_custo:     colabNotif[0]?.centro_custo,
-      desc_cc:          colabNotif[0]?.desc_cc,
-      tipo:             tipo,
-      motivo:           movimentacao,
-    }).catch(() => {});
+    await Promise.race([
+      tg.notificar(req.usuario.id, "plano_saude", {
+        colaborador_nome: colabNotif[0]?.nome,
+        chapa:            colabNotif[0]?.chapa,
+        funcao:           colabNotif[0]?.funcao,
+        centro_custo:     colabNotif[0]?.centro_custo,
+        desc_cc:          colabNotif[0]?.desc_cc,
+        solicitante:      req.usuario.nome,
+        tipo:             tipo,
+        motivo:           movimentacao,
+      }),
+      new Promise(r => setTimeout(r, 4000))
+    ]);
 
     return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
@@ -122,15 +126,19 @@ exports.addAnexo = async (req, res) => {
       "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
       [colaborador_id]
     );
-    tg.notificar(req.usuario.id, "plano_saude", {
-      colaborador_nome: colabNotif[0]?.nome,
-      chapa:            colabNotif[0]?.chapa,
-      funcao:           colabNotif[0]?.funcao,
-      centro_custo:     colabNotif[0]?.centro_custo,
-      desc_cc:          colabNotif[0]?.desc_cc,
-      tipo:             tipo,
-      motivo:           movimentacao,
-    }).catch(() => {});
+    await Promise.race([
+      tg.notificar(req.usuario.id, "plano_saude", {
+        colaborador_nome: colabNotif[0]?.nome,
+        chapa:            colabNotif[0]?.chapa,
+        funcao:           colabNotif[0]?.funcao,
+        centro_custo:     colabNotif[0]?.centro_custo,
+        desc_cc:          colabNotif[0]?.desc_cc,
+        solicitante:      req.usuario.nome,
+        tipo:             tipo,
+        motivo:           movimentacao,
+      }),
+      new Promise(r => setTimeout(r, 4000))
+    ]);
 
     return R.created(res, rows[0], "Solicitacao criada");
   } catch (e) {
