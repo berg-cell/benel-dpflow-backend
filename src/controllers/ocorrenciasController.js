@@ -23,7 +23,16 @@ exports.listar = async (req, res) => {
     if (data_fim)       { where.push(`o.data_ocorrencia <= $${i++}`); params.push(data_fim); }
 
     const sql = `
-      SELECT o.* FROM ocorrencias_disciplinares o
+      SELECT o.*,
+             a.nome_arquivo AS anexo_nome,
+             a.dados_base64 AS anexo_dados
+      FROM ocorrencias_disciplinares o
+      LEFT JOIN LATERAL (
+        SELECT nome_arquivo, dados_base64
+        FROM ocorrencias_disciplinares_anexos
+        WHERE ocorrencia_id = o.id
+        ORDER BY criado_em DESC LIMIT 1
+      ) a ON true
       WHERE ${where.join(" AND ")}
       ORDER BY o.criado_em DESC
     `;
