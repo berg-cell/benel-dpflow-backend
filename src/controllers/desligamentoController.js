@@ -86,22 +86,25 @@ exports.criar = async (req, res) => {
       dados_depois: req.body, ip: req.ip, user_agent: req.headers["user-agent"],
     });
 
-    // Notificação Telegram — busca dados do colaborador
+    // Notificação Telegram
     try {
       const { rows: colabNotif } = await db.query(
         "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
         [req.body.colaborador_id]
       );
-      tg.notificar(req.usuario.id, "desligamento", {
-        colaborador_nome: colabNotif[0]?.nome,
-        chapa:            colabNotif[0]?.chapa,
-        funcao:           colabNotif[0]?.funcao,
-        centro_custo:     colabNotif[0]?.centro_custo,
-        desc_cc:          colabNotif[0]?.desc_cc,
-        solicitante:      req.usuario.nome,
-        tipo:             req.body.tipo_desligamento || req.body.motivo,
-        motivo:           req.body.justificativa || req.body.observacao,
-      }).catch(() => {});
+      await Promise.race([
+        tg.notificar(req.usuario.id, "desligamento", {
+          colaborador_nome: colabNotif[0]?.nome,
+          chapa:            colabNotif[0]?.chapa,
+          funcao:           colabNotif[0]?.funcao,
+          centro_custo:     colabNotif[0]?.centro_custo,
+          desc_cc:          colabNotif[0]?.desc_cc,
+          solicitante:      req.usuario.nome,
+          tipo:             req.body.tipo_desligamento || req.body.motivo,
+          motivo:           req.body.justificativa || req.body.observacao,
+        }),
+        new Promise(r => setTimeout(r, 4000))
+      ]);
     } catch (_) {}
 
     return R.created(res, sol, "Solicitação criada com sucesso");
