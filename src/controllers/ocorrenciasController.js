@@ -88,14 +88,17 @@ exports.criar = async (req, res) => {
     ]);
 
     // Notificação Telegram
-    tg.notificar(req.usuario.id, "ocorrencia", {
-      colaborador_nome: nome_colaborador,
-      chapa:            chapa,
-      funcao:           secao,
-      solicitante:      req.usuario.nome,
-      tipo:             tipo === "ADVERTENCIA" ? "Advertência" : `Suspensão (${dias_suspensao} dia(s))`,
-      motivo:           motivo,
-    }).catch(() => {});
+    await Promise.race([
+      tg.notificar(req.usuario.id, "ocorrencia", {
+        colaborador_nome: nome_colaborador,
+        chapa:            chapa,
+        funcao:           secao,
+        solicitante:      req.usuario.nome,
+        tipo:             tipo === "ADVERTENCIA" ? "Advertência" : `Suspensão (${dias_suspensao} dia(s))`,
+        motivo:           motivo,
+      }),
+      new Promise(r => setTimeout(r, 4000))
+    ]);
 
     return R.created(res, r.rows[0], "Ocorrência registrada com sucesso");
   } catch (e) { return R.error(res, e.message); }
