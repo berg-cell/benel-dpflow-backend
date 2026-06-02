@@ -111,14 +111,18 @@ exports.criar = async (req, res) => {
       "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
       [colaborador_id]
     );
-    tg.notificar(req.usuario.id, "atualizacao_cadastral", {
-      colaborador_nome: colabNotif[0]?.nome,
-      chapa:            colabNotif[0]?.chapa,
-      funcao:           colabNotif[0]?.funcao,
-      centro_custo:     colabNotif[0]?.centro_custo,
-      desc_cc:          colabNotif[0]?.desc_cc,
-      observacao:       observacao,
-    }).catch(() => {});
+    await Promise.race([
+      tg.notificar(req.usuario.id, "atualizacao_cadastral", {
+        colaborador_nome: colabNotif[0]?.nome,
+        chapa:            colabNotif[0]?.chapa,
+        funcao:           colabNotif[0]?.funcao,
+        centro_custo:     colabNotif[0]?.centro_custo,
+        desc_cc:          colabNotif[0]?.desc_cc,
+        solicitante:      req.usuario.nome,
+        observacao:       observacao,
+      }),
+      new Promise(r => setTimeout(r, 4000))
+    ]);
 
     return R.created(res, sol, "Solicitação criada com sucesso");
   } catch (e) { return R.error(res, e.message); }
