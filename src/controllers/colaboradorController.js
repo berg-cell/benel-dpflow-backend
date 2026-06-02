@@ -85,6 +85,8 @@ exports.importar = async (req, res) => {
         cod_situacao:           r.cod_situacao ? String(r.cod_situacao).trim() : null,
         centro_custo:           r.centro_custo || null,
         desc_cc:                r.desc_cc || null,
+        cod_filial:             r.cod_filial || null,
+        descricao_filial:       r.descricao_filial ? r.descricao_filial.replace(/^BENEL TRANSPORTES\s*[-–]\s*/i, "").trim() : null,
         cpf:                    r.cpf || null,
         data_admissao:          r.data_admissao && r.data_admissao !== "" ? r.data_admissao : null,
         tipo_contrato:          r.tipo_contrato || r.cod_contrato || null,
