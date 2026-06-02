@@ -27,13 +27,13 @@ exports.listar = async (req, res) => {
     const { rows } = await db.query(`
       SELECT ac.*,
              c.chapa, c.nome AS colaborador_nome, c.funcao, c.data_admissao,
-             c.cod_situacao, c.centro_custo, c.desc_cc,
+             c.cod_situacao, c.centro_custo, c.desc_cc, c.descricao_filial,
              COALESCE(json_agg(aci.* ORDER BY aci.id) FILTER (WHERE aci.id IS NOT NULL), '[]') AS itens
       FROM atualizacao_cadastral ac
       JOIN colaboradores c ON ac.colaborador_id = c.id
       LEFT JOIN atualizacao_cadastral_itens aci ON aci.solicitacao_id = ac.id
       WHERE ${where.join(" AND ")}
-      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao, c.cod_situacao, c.centro_custo, c.desc_cc
+      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao, c.cod_situacao, c.centro_custo, c.desc_cc, c.descricao_filial
       ORDER BY ac.criado_em DESC
     `, p);
     return R.success(res, rows);
