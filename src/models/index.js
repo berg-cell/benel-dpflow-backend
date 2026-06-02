@@ -78,11 +78,12 @@ const ColaboradorModel = {
         tipo_contrato,data_fim_contrato,data_fim_estabilidade,descricao_estabilidade,
         rg,rg_orgao,rg_uf,ctps,ctps_serie,logradouro,numero,complemento,
         bairro,cidade,uf,cep,telefone1,sexo,estado_civil,nome_mae,pis,
-        posicao_escala,motorista_lider,munkeiro,prancheiro,tamanho_macacao,tamanho_bota
+        posicao_escala,motorista_lider,munkeiro,prancheiro,tamanho_macacao,tamanho_bota,
+        cod_filial,descricao_filial
        ) VALUES(
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
         $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-        $31,$32,$33,$34,$35,$36
+        $31,$32,$33,$34,$35,$36,$37,$38
        ) RETURNING *`,
       [d.chapa, d.nome, d.funcao||null, d.situacao||"Ativo", d.cod_situacao||null,
        d.centro_custo||null, d.desc_cc||null, d.cpf||null, d.data_admissao||null,
@@ -94,7 +95,8 @@ const ColaboradorModel = {
        d.cep||null, d.telefone1||null, d.sexo||null, d.estado_civil||null,
        d.nome_mae||null, d.pis||null,
        d.posicao_escala||null, d.motorista_lider||null, d.munkeiro||null,
-       d.prancheiro||null, d.tamanho_macacao||null, d.tamanho_bota||null]
+       d.prancheiro||null, d.tamanho_macacao||null, d.tamanho_bota||null,
+       d.cod_filial||null, d.descricao_filial||null]
     ),
   update: (id, d) => {
     const sets = []; const p = []; let i = 1;
@@ -103,7 +105,8 @@ const ColaboradorModel = {
      "data_fim_estabilidade","descricao_estabilidade",
      "rg","rg_orgao","rg_uf","ctps","ctps_serie","logradouro","numero","complemento",
      "bairro","cidade","uf","cep","telefone1","sexo","estado_civil","nome_mae","pis",
-     "posicao_escala","motorista_lider","munkeiro","prancheiro","tamanho_macacao","tamanho_bota"].forEach(c => {
+     "posicao_escala","motorista_lider","munkeiro","prancheiro","tamanho_macacao","tamanho_bota",
+     "cod_filial","descricao_filial"].forEach(c => {
       if (d[c] !== undefined) { sets.push(`${c}=$${i++}`); p.push(d[c] || null); }
     });
     sets.push("atualizado_em=NOW()"); p.push(id);
