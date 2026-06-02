@@ -13,9 +13,9 @@ const pool = new Pool(
         connectionString: process.env.DATABASE_URL,
         ssl: sslConfig,
         family: 4,
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
+        max: 3,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 4000,
       }
     : {
         host:     process.env.DB_HOST     || "localhost",
@@ -25,9 +25,9 @@ const pool = new Pool(
         password: process.env.DB_PASSWORD || "",
         ssl:      process.env.DB_SSL === "true" ? sslConfig : false,
         family: 4,
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
+        max: 3,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 4000,
       }
 );
 
