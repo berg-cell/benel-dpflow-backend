@@ -199,4 +199,13 @@ router.post("/rescisao-valores",                    autenticar, autorizar("dp","
 router.delete("/rescisao-valores/:id",              autenticar, autorizar("dp","admin"),          rescisaoCtrl.excluir);
 router.get( "/rescisao-valores/desligamento/:id",   autenticar, autorizar("dp","admin"),          rescisaoCtrl.buscarPorDesligamento);
 
+// ============================================================
+// PATCH: src/routes/index.js — adicionar junto com as outras rotas de rescisão
+// ============================================================
+
+const rescisaoImportCtrl = require("../controllers/rescisaoImportController");
+
+router.post("/rescisao-valores/importar",        autenticar, autorizar("dp","admin"), rescisaoImportCtrl.importar);
+router.get( "/rescisao-valores/testar-conexao",  autenticar, autorizar("dp","admin"), rescisaoImportCtrl.testarConexao);
+
 module.exports = router;
