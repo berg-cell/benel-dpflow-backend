@@ -198,6 +198,7 @@ router.get( "/rescisao-valores",                    autenticar, autorizar("dp","
 router.post("/rescisao-valores",                    autenticar, autorizar("dp","admin"),          rescisaoCtrl.lancar);
 router.delete("/rescisao-valores/:id",              autenticar, autorizar("dp","admin"),          rescisaoCtrl.excluir);
 router.get( "/rescisao-valores/desligamento/:id",   autenticar, autorizar("dp","admin"),          rescisaoCtrl.buscarPorDesligamento);
+router.post("/rescisao-valores/importar-lote",        autenticar, autorizar("dp","admin"),          rescisaoCtrl.importarLote);
 
 // ============================================================
 // PATCH: src/routes/index.js — adicionar junto com as outras rotas de rescisão
