@@ -89,18 +89,20 @@ exports.criar = async (req, res) => {
     // Notificação Telegram
     try {
       const { rows: colabNotif } = await db.query(
-        "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
+        "SELECT nome, chapa, funcao, centro_custo, desc_cc, descricao_filial FROM colaboradores WHERE id=$1",
         [req.body.colaborador_id]
       );
       await Promise.race([
         tg.notificar(req.usuario.id, "desligamento", {
+          desligamento_id:  sol.id,
           colaborador_nome: colabNotif[0]?.nome,
           chapa:            colabNotif[0]?.chapa,
           funcao:           colabNotif[0]?.funcao,
+          filial:           colabNotif[0]?.descricao_filial,
           centro_custo:     colabNotif[0]?.centro_custo,
           desc_cc:          colabNotif[0]?.desc_cc,
           solicitante:      req.usuario.nome,
-          tipo:             req.body.tipo_desligamento || req.body.motivo,
+          tipo:             req.body.tipo_desligamento || req.body.tipo || req.body.motivo,
           motivo:           req.body.justificativa || req.body.observacao,
         }),
         new Promise(r => setTimeout(r, 4000))
