@@ -174,14 +174,14 @@ router.put( "/plano-saude/:id/cancelar",        autenticar, autorizar("dp","admi
 
 // Adicionar no src/routes/index.js ANTES de module.exports = router;
 
-// ── Atualização Cadastral ─────────────────────────────────────────────────────
+// ── Atualização Cadastral — substitua as rotas existentes no src/routes/index.js
 const atualizacaoCadastralCtrl = require("../controllers/atualizacaoCadastralController");
-
-router.get( "/atualizacao-cadastral",          autenticar,                                  atualizacaoCadastralCtrl.listar);
-router.get( "/atualizacao-cadastral/:id",       autenticar,                                  atualizacaoCadastralCtrl.buscarPorId);
-router.post("/atualizacao-cadastral",           autenticar, autorizar("gestor","dp","admin"), atualizacaoCadastralCtrl.criar);
-router.put( "/atualizacao-cadastral/:id/aprovar", autenticar, autorizar("dp","admin"),        atualizacaoCadastralCtrl.aprovar);
-router.put( "/atualizacao-cadastral/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), atualizacaoCadastralCtrl.cancelar);
+ 
+router.get( "/atualizacao-cadastral",              autenticar,                                               atualizacaoCadastralCtrl.listar);
+router.get( "/atualizacao-cadastral/:id",           autenticar,                                               atualizacaoCadastralCtrl.buscarPorId);
+router.post("/atualizacao-cadastral",               autenticar, autorizar("gestor","dp","admin","presidente"), atualizacaoCadastralCtrl.criar);
+router.put( "/atualizacao-cadastral/:id/aprovar",   autenticar, autorizar("dp","admin","presidente"),         atualizacaoCadastralCtrl.aprovar);
+router.put( "/atualizacao-cadastral/:id/cancelar",  autenticar, autorizar("gestor","dp","admin","presidente"), atualizacaoCadastralCtrl.cancelar);
 
 const telegramCtrl = require("../controllers/telegramController");
 router.post("/telegram/webhook", telegramCtrl.webhook);
