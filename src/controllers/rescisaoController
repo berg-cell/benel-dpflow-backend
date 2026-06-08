@@ -1,0 +1,103 @@
+// src/controllers/rescisaoController.js
+"use strict";
+const db = require("../config/database");
+const R  = require("../utils/response");
+
+// ── Listar por competência ────────────────────────────────────────────────────
+exports.listar = async (req, res) => {
+  try {
+    const { mes, ano } = req.query;
+    const params = [];
+    let where = ["1=1"];
+
+    if (mes) { where.push(`competencia_mes=$${params.length+1}`); params.push(parseInt(mes)); }
+    if (ano) { where.push(`competencia_ano=$${params.length+1}`); params.push(parseInt(ano)); }
+
+    const { rows } = await db.query(`
+      SELECT rv.*
+      FROM rescisao_valores rv
+      WHERE ${where.join(" AND ")}
+      ORDER BY rv.filial, rv.criado_em DESC
+    `, params);
+
+    return R.success(res, rows);
+  } catch (e) { return R.error(res, e.message); }
+};
+
+// ── Lançar / atualizar valor ──────────────────────────────────────────────────
+exports.lancar = async (req, res) => {
+  try {
+    const {
+      desligamento_id, valor_total,
+      competencia_mes, competencia_ano, observacao
+    } = req.body;
+
+    if (!desligamento_id || !valor_total || !competencia_mes || !competencia_ano)
+      return R.badRequest(res, "desligamento_id, valor_total, competencia_mes e competencia_ano são obrigatórios");
+
+    // Buscar dados do desligamento
+    const { rows: desls } = await db.query(`
+      SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
+      FROM solicitacao_desligamento sd
+      LEFT JOIN colaboradores c ON c.chapa = sd.chapa
+      WHERE sd.id = $1
+    `, [desligamento_id]);
+
+    if (!desls[0]) return R.notFound(res, "Desligamento não encontrado");
+    const desl = desls[0];
+
+    // Upsert — um lançamento por desligamento
+    const { rows } = await db.query(`
+      INSERT INTO rescisao_valores
+        (desligamento_id, colaborador_id, colaborador_nome, colaborador_chapa,
+         filial, tipo_desligamento, valor_total,
+         competencia_mes, competencia_ano, observacao,
+         lancado_por_id, lancado_por_nome)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (desligamento_id) DO UPDATE SET
+        valor_total       = EXCLUDED.valor_total,
+        competencia_mes   = EXCLUDED.competencia_mes,
+        competencia_ano   = EXCLUDED.competencia_ano,
+        observacao        = EXCLUDED.observacao,
+        lancado_por_id    = EXCLUDED.lancado_por_id,
+        lancado_por_nome  = EXCLUDED.lancado_por_nome,
+        atualizado_em     = NOW()
+      RETURNING *
+    `, [
+      desligamento_id,
+      desl.col_id || null,
+      desl.colaborador_nome || desl.col_nome,
+      desl.chapa || desl.col_chapa,
+      desl.descricao_filial || "Sem Filial",
+      desl.tipo,
+      parseFloat(valor_total),
+      parseInt(competencia_mes),
+      parseInt(competencia_ano),
+      observacao || null,
+      req.usuario.id,
+      req.usuario.nome,
+    ]);
+
+    return R.created(res, rows[0], "Valor lançado com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+// ── Excluir lançamento ────────────────────────────────────────────────────────
+exports.excluir = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query("DELETE FROM rescisao_valores WHERE id=$1", [id]);
+    return R.success(res, {}, "Lançamento excluído");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+// ── Buscar por desligamento_id ────────────────────────────────────────────────
+exports.buscarPorDesligamento = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await db.query(
+      "SELECT * FROM rescisao_valores WHERE desligamento_id=$1", [id]
+    );
+    return R.success(res, rows[0] || null);
+  } catch (e) { return R.error(res, e.message); }
+};
