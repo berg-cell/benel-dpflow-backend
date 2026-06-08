@@ -105,7 +105,7 @@ async function processarCallback(cb) {
 
   // Verificar se o usuário tem permissão (dp ou admin)
   const { rows: usuarios } = await db.query(
-    "SELECT id, nome, perfil FROM usuarios WHERE telegram_chat_id=$1 AND perfil IN ('dp','admin') AND ativo=true",
+    "SELECT id, nome, perfil FROM usuarios WHERE telegram_chat_id=$1 AND perfil IN ('dp','admin','presidente') AND ativo=true",
     [String(chatId)]
   );
 
