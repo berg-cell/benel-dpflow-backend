@@ -186,4 +186,17 @@ router.put( "/atualizacao-cadastral/:id/cancelar", autenticar, autorizar("gestor
 const telegramCtrl = require("../controllers/telegramController");
 router.post("/telegram/webhook", telegramCtrl.webhook);
 
+// ============================================================
+// PATCH: src/routes/index.js
+// Adicionar ANTES de module.exports = router;
+// ============================================================
+
+// ── Rescisão Valores ──────────────────────────────────────────────────────────
+const rescisaoCtrl = require("../controllers/rescisaoController");
+
+router.get( "/rescisao-valores",                    autenticar, autorizar("dp","admin"),          rescisaoCtrl.listar);
+router.post("/rescisao-valores",                    autenticar, autorizar("dp","admin"),          rescisaoCtrl.lancar);
+router.delete("/rescisao-valores/:id",              autenticar, autorizar("dp","admin"),          rescisaoCtrl.excluir);
+router.get( "/rescisao-valores/desligamento/:id",   autenticar, autorizar("dp","admin"),          rescisaoCtrl.buscarPorDesligamento);
+
 module.exports = router;
