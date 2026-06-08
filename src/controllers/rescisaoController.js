@@ -28,49 +28,83 @@ exports.listar = async (req, res) => {
 exports.lancar = async (req, res) => {
   try {
     const {
-      desligamento_id, valor_total,
+      desligamento_id, chapa, nome, filial,
+      valor_total, liquido, proventos, descontos, fgts_rescisorio,
       competencia_mes, competencia_ano, observacao
     } = req.body;
 
-    if (!desligamento_id || !valor_total || !competencia_mes || !competencia_ano)
-      return R.badRequest(res, "desligamento_id, valor_total, competencia_mes e competencia_ano são obrigatórios");
+    if ((!desligamento_id && !chapa) || !competencia_mes || !competencia_ano)
+      return R.badRequest(res, "desligamento_id ou chapa, competencia_mes e competencia_ano são obrigatórios");
 
-    // Buscar dados do desligamento
-    const { rows: desls } = await db.query(`
-      SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
-      FROM solicitacao_desligamento sd
-      LEFT JOIN colaboradores c ON c.chapa = sd.chapa
-      WHERE sd.id = $1
-    `, [desligamento_id]);
+    // Buscar desligamento — por id ou por chapa
+    let desl = null;
+    if (desligamento_id) {
+      const { rows: desls } = await db.query(`
+        SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
+        FROM solicitacao_desligamento sd
+        LEFT JOIN colaboradores c ON c.chapa = sd.chapa
+        WHERE sd.id = $1
+      `, [desligamento_id]);
+      desl = desls[0];
+    } else {
+      const { rows: desls } = await db.query(`
+        SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
+        FROM solicitacao_desligamento sd
+        LEFT JOIN colaboradores c ON c.chapa = sd.chapa
+        WHERE sd.chapa = $1
+        ORDER BY sd.criado_em DESC LIMIT 1
+      `, [String(chapa).trim()]);
+      desl = desls[0];
+    }
 
-    if (!desls[0]) return R.notFound(res, "Desligamento não encontrado");
-    const desl = desls[0];
+    if (!desl) {
+      // Se não achar desligamento, cria registro sem vínculo
+      desl = {
+        col_id: null,
+        col_nome: nome,
+        col_chapa: chapa,
+        descricao_filial: filial,
+        tipo: null,
+        id: null,
+      };
+    }
 
     // Upsert — um lançamento por desligamento
+    const vTotal   = parseFloat(valor_total || total || 0);
+    const vLiquido = parseFloat(liquido   || 0);
+    const vProv    = parseFloat(proventos || 0);
+    const vDesc    = parseFloat(descontos || 0);
+    const vFgts    = parseFloat(fgts_rescisorio || 0);
+    const filialFinal = filial || desl.descricao_filial || "Sem Filial";
+
     const { rows } = await db.query(`
       INSERT INTO rescisao_valores
         (desligamento_id, colaborador_id, colaborador_nome, colaborador_chapa,
          filial, tipo_desligamento, valor_total,
+         liquido, proventos, descontos, fgts_rescisorio,
          competencia_mes, competencia_ano, observacao,
          lancado_por_id, lancado_por_nome)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      ON CONFLICT (desligamento_id) DO UPDATE SET
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      ON CONFLICT (desligamento_id, competencia_mes, competencia_ano) DO UPDATE SET
         valor_total       = EXCLUDED.valor_total,
-        competencia_mes   = EXCLUDED.competencia_mes,
-        competencia_ano   = EXCLUDED.competencia_ano,
+        liquido           = EXCLUDED.liquido,
+        proventos         = EXCLUDED.proventos,
+        descontos         = EXCLUDED.descontos,
+        fgts_rescisorio   = EXCLUDED.fgts_rescisorio,
         observacao        = EXCLUDED.observacao,
         lancado_por_id    = EXCLUDED.lancado_por_id,
         lancado_por_nome  = EXCLUDED.lancado_por_nome,
         atualizado_em     = NOW()
       RETURNING *
     `, [
-      desligamento_id,
+      desl.id || null,
       desl.col_id || null,
-      desl.colaborador_nome || desl.col_nome,
-      desl.chapa || desl.col_chapa,
-      desl.descricao_filial || "Sem Filial",
-      desl.tipo,
-      parseFloat(valor_total),
+      desl.col_nome || nome,
+      desl.col_chapa || chapa,
+      filialFinal,
+      desl.tipo || null,
+      vTotal,
+      vLiquido, vProv, vDesc, vFgts,
       parseInt(competencia_mes),
       parseInt(competencia_ano),
       observacao || null,
