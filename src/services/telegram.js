@@ -149,7 +149,7 @@ async function notificar(_, tipo, dados) {
     const { rows } = await db.query(`
       SELECT telegram_chat_id
       FROM usuarios
-      WHERE perfil IN ('dp', 'admin')
+      WHERE perfil IN ('dp', 'admin', 'presidente')
         AND ativo = true
         AND telegram_chat_id IS NOT NULL
     `);
