@@ -50,8 +50,8 @@ exports.lancar = async (req, res) => {
       const { rows: desls } = await db.query(`
         SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
         FROM solicitacao_desligamento sd
-        LEFT JOIN colaboradores c ON c.chapa = sd.chapa
-        WHERE sd.chapa = $1
+        LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
+        WHERE c.chapa = $1
         ORDER BY sd.criado_em DESC LIMIT 1
       `, [String(chapa).trim()]);
       desl = desls[0];
@@ -113,6 +113,94 @@ exports.lancar = async (req, res) => {
     ]);
 
     return R.created(res, rows[0], "Valor lançado com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+// ── Importar em lote (CSV) ───────────────────────────────────────────────────
+exports.importarLote = async (req, res) => {
+  try {
+    const { registros } = req.body;
+    if (!Array.isArray(registros) || registros.length === 0)
+      return R.badRequest(res, "Lista de registros vazia");
+
+    let inseridos = 0, atualizados = 0;
+    const erros = [];
+
+    for (const reg of registros) {
+      try {
+        const { chapa, nome, filial, liquido, proventos, descontos,
+                fgts_rescisorio, valor_total, competencia_mes, competencia_ano } = reg;
+
+        if (!chapa || !competencia_mes || !competencia_ano) {
+          erros.push(`Chapa ${chapa}: dados incompletos`);
+          continue;
+        }
+
+        // Buscar colaborador e desligamento
+        const { rows: colabs } = await db.query(
+          "SELECT id, descricao_filial, nome FROM colaboradores WHERE chapa=$1 LIMIT 1",
+          [String(chapa).trim()]
+        );
+
+        const { rows: desls } = await db.query(`
+          SELECT sd.id, sd.tipo
+          FROM solicitacao_desligamento sd
+          LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
+          WHERE c.chapa = $1
+          ORDER BY sd.criado_em DESC LIMIT 1
+        `, [String(chapa).trim()]);
+
+        const col       = colabs[0];
+        const desl      = desls[0];
+        const filialFinal = col?.descricao_filial || filial || "Sem Filial";
+
+        const { rows: existing } = await db.query(
+          "SELECT id FROM rescisao_valores WHERE colaborador_chapa=$1 AND competencia_mes=$2 AND competencia_ano=$3",
+          [String(chapa).trim(), parseInt(competencia_mes), parseInt(competencia_ano)]
+        );
+
+        if (existing[0]) {
+          await db.query(`
+            UPDATE rescisao_valores SET
+              liquido=$1, proventos=$2, descontos=$3, fgts_rescisorio=$4, valor_total=$5,
+              lancado_por_id=$6, lancado_por_nome=$7, atualizado_em=NOW()
+            WHERE id=$8
+          `, [
+            parseFloat(liquido)||0, parseFloat(proventos)||0, parseFloat(descontos)||0,
+            parseFloat(fgts_rescisorio)||0, parseFloat(valor_total)||0,
+            req.usuario.id, req.usuario.nome, existing[0].id
+          ]);
+          atualizados++;
+        } else {
+          await db.query(`
+            INSERT INTO rescisao_valores
+              (desligamento_id, colaborador_id, colaborador_nome, colaborador_chapa,
+               filial, tipo_desligamento, liquido, proventos, descontos,
+               fgts_rescisorio, valor_total, competencia_mes, competencia_ano,
+               lancado_por_id, lancado_por_nome)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          `, [
+            desl?.id || null,
+            col?.id  || null,
+            col?.nome || nome,
+            String(chapa).trim(),
+            filialFinal,
+            desl?.tipo || null,
+            parseFloat(liquido)||0, parseFloat(proventos)||0, parseFloat(descontos)||0,
+            parseFloat(fgts_rescisorio)||0, parseFloat(valor_total)||0,
+            parseInt(competencia_mes), parseInt(competencia_ano),
+            req.usuario.id, req.usuario.nome
+          ]);
+          inseridos++;
+        }
+      } catch (e) {
+        erros.push(`Chapa ${reg.chapa}: ${e.message}`);
+      }
+    }
+
+    return R.success(res, { inseridos, atualizados, erros, total: registros.length },
+      `Importação concluída: ${inseridos} inserido(s), ${atualizados} atualizado(s)`
+    );
   } catch (e) { return R.error(res, e.message); }
 };
 
