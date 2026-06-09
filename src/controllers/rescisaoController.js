@@ -70,7 +70,7 @@ exports.lancar = async (req, res) => {
     }
 
     // Upsert — um lançamento por desligamento
-    const vTotal   = parseFloat(valor_total || 0);
+    const vTotal   = parseFloat(valor_total || total || 0);
     const vLiquido = parseFloat(liquido   || 0);
     const vProv    = parseFloat(proventos || 0);
     const vDesc    = parseFloat(descontos || 0);
