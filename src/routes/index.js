@@ -1,213 +1,285 @@
-// src/routes/index.js BACKUP
-"use strict";
-const router = require("express").Router();
+// src/api.js — Camada de comunicação com o backend DP Flow  
 
-const { autenticar, autorizar, validate, rateLimitLogin, auditLog } = require("../middlewares");
+const BASE = import.meta.env.VITE_API_URL || "https://benel-dpflow-backend.vercel.app";
 
-const schemas = require("../validators/schemas");
+let _accessToken = null;
+let _refreshToken = null;
+let _onSessionExpired = null;
 
-const authCtrl        = require("../controllers/authController");
-const usuarioCtrl     = require("../controllers/usuarioController");
-const colaboradorCtrl = require("../controllers/colaboradorController");
-const eventoCtrl      = require("../controllers/eventoController");
-const blocoCtrl       = require("../controllers/blocoController");
-const auditoriaCtrl   = require("../controllers/auditoriaController");
-const desligamentoCtrl = require("../controllers/desligamentoController");
-const ocorrenciasCtrl     = require("../controllers/ocorrenciasController");
-const hierarquiaCtrl      = require("../controllers/hierarquiaAlcadasController");
-const centroCustoCtrl     = require("../controllers/centroCustoController");
-const autorizacaoCtrl     = require("../controllers/autorizacaoController");
+export function setTokens(access, refresh) {
+  _accessToken = access;
+  _refreshToken = refresh;
+  if (refresh) sessionStorage.setItem("dpflow_refresh", refresh);
+  if (access)  sessionStorage.setItem("dpflow_access",  access);
+}
 
-const db = require("../config/database");
+export function getAccessToken() { return _accessToken; }
 
-// ── Health check ──────────────────────────────────────────────────────────────
-router.get("/health", async (req, res) => {
-  try {
-    const info = await db.testConnection();
-    res.json({ status: "ok", env: process.env.NODE_ENV, db: info, ts: new Date().toISOString() });
-  } catch {
-    res.status(503).json({ status: "error", message: "Banco indisponível" });
+export function loadTokensFromStorage() {
+  _accessToken  = sessionStorage.getItem("dpflow_access");
+  _refreshToken = sessionStorage.getItem("dpflow_refresh");
+  return { accessToken: _accessToken, refreshToken: _refreshToken };
+}
+
+export function clearTokens() {
+  _accessToken  = null;
+  _refreshToken = null;
+  sessionStorage.removeItem("dpflow_refresh");
+  sessionStorage.removeItem("dpflow_access");
+}
+
+export function onSessionExpired(callback) {
+  _onSessionExpired = callback;
+}
+
+async function request(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (_accessToken) headers["Authorization"] = `Bearer ${_accessToken}`;
+
+  let res = await fetch(`${BASE}/api${path}`, { ...options, headers });
+
+  // Token expirado — tentar refresh automático
+  if (res.status === 401 && _refreshToken) {
+    try {
+      const rr = await fetch(`${BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: _refreshToken }),
+      });
+      if (rr.ok) {
+        const rd = await rr.json();
+        setTokens(rd.data.accessToken, rd.data.refreshToken);
+        headers["Authorization"] = `Bearer ${_accessToken}`;
+        res = await fetch(`${BASE}/api${path}`, { ...options, headers });
+      } else {
+        clearTokens();
+        if (_onSessionExpired) _onSessionExpired();
+        throw Object.assign(new Error("Sessão expirada. Faça login novamente."), { code: "SESSION_EXPIRED" });
+      }
+    } catch (e) {
+      if (e.code === "SESSION_EXPIRED") throw e;
+      clearTokens();
+      if (_onSessionExpired) _onSessionExpired();
+      throw Object.assign(new Error("Sessão expirada. Faça login novamente."), { code: "SESSION_EXPIRED" });
+    }
   }
-});
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-/**
- * @swagger
- * /api/auth/login:
- *   post:
- *     summary: Realizar login
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Login'
- *     responses:
- *       200:
- *         description: Login bem-sucedido
- *       401:
- *         description: Credenciais inválidas
- *       429:
- *         description: Muitas tentativas — bloqueado por 15 min
- */
-router.post("/auth/login",         rateLimitLogin, validate(schemas.loginSchema),        auditLog("LOGIN"),        authCtrl.login);
-router.post("/auth/refresh",                       validate(schemas.refreshSchema),                                authCtrl.refresh);
-router.post("/auth/logout",        autenticar,                                            auditLog("LOGOUT"),       authCtrl.logout);
-router.get( "/auth/me",            autenticar,                                                                      authCtrl.me);
-router.put( "/auth/alterar-senha", autenticar,     validate(schemas.alterarSenhaSchema), auditLog("ALTERAR_SENHA"), authCtrl.alterarSenha);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || `Erro ${res.status}`);
+  return data.data ?? data;
+}
 
-// ── Usuários (admin) ──────────────────────────────────────────────────────────
-/**
- * @swagger
- * /api/usuarios:
- *   get:
- *     summary: Listar usuários
- *     tags: [Usuários]
- *     security: [{bearerAuth: []}]
- */
-router.get( "/usuarios",     autenticar, autorizar("admin"),                                               usuarioCtrl.listar);
-router.post("/usuarios",     autenticar, autorizar("admin"), usuarioCtrl.criar);
-router.put( "/usuarios/:id",              autenticar, autorizar("admin"), usuarioCtrl.atualizar);
-router.put( "/usuarios/:id/reset-senha",  autenticar, autorizar("admin"), auditLog("RESET_SENHA"),                           usuarioCtrl.resetarSenha);
+export const api = {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  login: (email, senha) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify({ email, senha }) }),
 
-// ── Colaboradores ─────────────────────────────────────────────────────────────
-/**
- * @swagger
- * /api/colaboradores:
- *   get:
- *     summary: Listar colaboradores
- *     tags: [Colaboradores]
- *     security: [{bearerAuth: []}]
- */
-router.get( "/colaboradores",          autenticar,                                                                    colaboradorCtrl.listar);
-router.get( "/colaboradores/buscar",   autenticar,                                                                    colaboradorCtrl.buscar);
-router.get( "/colaboradores/:id",      autenticar,                                                                    colaboradorCtrl.buscarPorId);
-router.post("/colaboradores",          autenticar, autorizar("dp","admin"), colaboradorCtrl.criar);
-router.put( "/colaboradores/:id",      autenticar, autorizar("dp","admin"), colaboradorCtrl.atualizar);
-router.post("/colaboradores/importar", autenticar, autorizar("dp","admin"), colaboradorCtrl.importar);
+  logout: () =>
+    request("/auth/logout", { method: "POST" }),
 
-// ── Eventos ───────────────────────────────────────────────────────────────────
-router.get( "/eventos",     autenticar,                                          eventoCtrl.listar);
-router.get( "/eventos/:id", autenticar,                                          eventoCtrl.buscarPorId);
-router.post("/eventos",     autenticar, autorizar("dp","admin"), eventoCtrl.criar);
-router.put( "/eventos/:id", autenticar, autorizar("dp","admin"), eventoCtrl.atualizar);
+  me: () => request("/auth/me"),
 
-// ── Blocos ────────────────────────────────────────────────────────────────────
-/**
- * @swagger
- * /api/blocos:
- *   post:
- *     summary: Criar bloco de solicitações
- *     tags: [Blocos]
- *     security: [{bearerAuth: []}]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [descricao, competencia, evento_id, linhas]
- *             properties:
- *               descricao:   { type: string }
- *               competencia: { type: string, example: "092025" }
- *               evento_id:   { type: integer }
- *               linhas:      { type: array }
- */
-router.get( "/blocos",                  autenticar,                                              blocoCtrl.listar);
-router.get( "/blocos/exportar/txt",     autenticar, autorizar("dp","admin"), auditLog("EXPORT"), blocoCtrl.exportarTxt);
-router.get( "/blocos/:id",              autenticar,                                              blocoCtrl.buscarPorId);
-router.post("/blocos",                  autenticar, validate(schemas.blocoSchema),  auditLog("CRIAR_BLOCO"),   blocoCtrl.criar);
-router.put( "/blocos/:id/aprovar",      autenticar, validate(schemas.acaoAprovacaoSchema), auditLog("APROVAR"), blocoCtrl.aprovar);
+  // ── Colaboradores ─────────────────────────────────────────────────────────
+  listarColaboradores: (incluirDemitidos = false) =>
+    request(`/colaboradores${incluirDemitidos ? "?incluirDemitidos=true" : ""}`),
 
-// ── Auditoria ─────────────────────────────────────────────────────────────────
-router.get("/auditoria", autenticar, autorizar("dp","admin"), auditoriaCtrl.listar); 
+  buscarColaboradores: (q) =>
+    request(`/colaboradores/buscar?q=${encodeURIComponent(q)}`),
 
-// ── Desligamento ──────────────────────────────────────────────────────────────
-router.get( "/desligamentos/validar-colaborador/:id", autenticar, autorizar("gestor","dp","admin"), desligamentoCtrl.validarColaborador);
-router.get( "/desligamentos",                autenticar,                                     desligamentoCtrl.listar);
-router.get( "/desligamentos/:id",            autenticar,                                     desligamentoCtrl.buscarPorId);
-router.post("/desligamentos",                autenticar, autorizar("gestor","dp","admin"),    desligamentoCtrl.criar);
-router.put( "/desligamentos/:id/enviar",     autenticar, autorizar("gestor","dp","admin"),    desligamentoCtrl.enviar);
-router.put( "/desligamentos/:id/aprovar",    autenticar, autorizar("superior","dp","admin"),  desligamentoCtrl.aprovar);
-router.put( "/desligamentos/:id/cancelar",        autenticar, autorizar("dp","admin"), auditLog("CANCELAR_DESLIGAMENTO"), desligamentoCtrl.cancelar);
-router.post("/desligamentos/:id/anexos",          autenticar,                                    desligamentoCtrl.addAnexo);
-router.get( "/desligamentos/:id/anexos/:anexoId", autenticar,                                    desligamentoCtrl.getAnexo);
+  criarColaborador: (data) =>
+    request("/colaboradores", { method: "POST", body: JSON.stringify(data) }),
 
-// ── Centro de Custo ───────────────────────────────────────────────────────────
-router.get( "/centros-custo",          autenticar,                             centroCustoCtrl.listar);
-router.post("/centros-custo/importar", autenticar, autorizar("dp","admin"),     centroCustoCtrl.upsertBatch);
+  atualizarColaborador: (id, data) =>
+    request(`/colaboradores/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
-// ── Autorização de Desconto ───────────────────────────────────────────────────
-router.get( "/autorizacoes",              autenticar,                                             autorizacaoCtrl.listar);
-router.post("/autorizacoes",              autenticar, autorizar("gestor","dp","admin"),           autorizacaoCtrl.criar);
-router.post("/autorizacoes/:id/anexo",    autenticar,                                             autorizacaoCtrl.addAnexo);
-router.put( "/autorizacoes/:id/cancelar", autenticar, autorizar("dp","admin"),                   autorizacaoCtrl.cancelar);
+  importarColaboradores: (lista) =>
+    request("/colaboradores/importar", {
+      method: "POST",
+      body: JSON.stringify({ colaboradores: lista }),
+    }),
 
-// ── Hierarquia ───────────────────────────────────────────────────────────────
-router.get( "/hierarquia",      autenticar, autorizar("dp","admin"),                       hierarquiaCtrl.listarHierarquia);
-router.post("/hierarquia",      autenticar, autorizar("dp","admin"), auditLog("HIER_CRIAR"), hierarquiaCtrl.criarHierarquia);
-router.put( "/hierarquia/:id",  autenticar, autorizar("dp","admin"), auditLog("HIER_EDIT"),  hierarquiaCtrl.atualizarHierarquia);
+  // ── Eventos ───────────────────────────────────────────────────────────────
+  listarEventos: () => request("/eventos"),
 
-// ── Alçadas ───────────────────────────────────────────────────────────────────
-router.get( "/alcadas",         autenticar, autorizar("dp","admin"),                       hierarquiaCtrl.listarAlcadas);
-router.post("/alcadas",         autenticar, autorizar("dp","admin"), auditLog("ALC_CRIAR"),  hierarquiaCtrl.criarAlcada);
-router.put( "/alcadas/:id",     autenticar, autorizar("dp","admin"), auditLog("ALC_EDIT"),   hierarquiaCtrl.atualizarAlcada);
+  criarEvento: (data) =>
+    request("/eventos", { method: "POST", body: JSON.stringify(data) }),
 
-// ── Ocorrências Disciplinares ─────────────────────────────────────────────────
-router.get( "/ocorrencias",              autenticar,                                                    ocorrenciasCtrl.listar);
-router.get( "/ocorrencias/exportar",     autenticar, autorizar("dp","admin","gestor"), auditLog("EXPORT_OCORRENCIAS"), ocorrenciasCtrl.exportar);
-router.get( "/ocorrencias/:id",          autenticar,                                                    ocorrenciasCtrl.buscarPorId);
-router.post("/ocorrencias",              autenticar, autorizar("gestor","dp","admin"), auditLog("CRIAR_OCORRENCIA"),   ocorrenciasCtrl.criar);
-router.put( "/ocorrencias/:id/cancelar", autenticar, autorizar("gestor","dp","admin"), auditLog("CANCELAR_OCORRENCIA"), ocorrenciasCtrl.cancelar);
-router.post("/ocorrencias/:id/anexos",   autenticar,                                  auditLog("ANEXO_OCORRENCIA"),    ocorrenciasCtrl.addAnexo);
+  atualizarEvento: (id, data) =>
+    request(`/eventos/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
-// ── Plano de Saúde ────────────────────────────────────────────────────────────
-const planoSaudeCtrl = require("../controllers/planoSaudeController");
+  // ── Blocos ────────────────────────────────────────────────────────────────
+  listarBlocos: (filtros = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(filtros).filter(([, v]) => v))
+    ).toString();
+    return request(`/blocos${qs ? "?" + qs : ""}`);
+  },
 
-router.get( "/plano-saude",                     autenticar,                                  planoSaudeCtrl.listar);
-router.get( "/plano-saude/:id",                 autenticar,                                  planoSaudeCtrl.buscarPorId);
-router.post("/plano-saude",                     autenticar, autorizar("gestor","dp","admin"), planoSaudeCtrl.criar);
-router.post("/plano-saude/:id/anexos",          autenticar,                                  planoSaudeCtrl.addAnexo);
-router.get( "/plano-saude/:id/anexos/:anexoId", autenticar,                                  planoSaudeCtrl.getAnexo);
-router.put( "/plano-saude/:id/cancelar",        autenticar, autorizar("dp","admin"),         planoSaudeCtrl.cancelar);
+  buscarBloco: (id) => request(`/blocos/${id}`),
 
-// Adicionar no src/routes/index.js ANTES de module.exports = router;
+  criarBloco: (data) =>
+    request("/blocos", { method: "POST", body: JSON.stringify(data) }),
 
-// ── Atualização Cadastral — substitua as rotas existentes no src/routes/index.js
-const atualizacaoCadastralCtrl = require("../controllers/atualizacaoCadastralController");
- 
-router.get( "/atualizacao-cadastral",              autenticar,                                               atualizacaoCadastralCtrl.listar);
-router.get( "/atualizacao-cadastral/:id",           autenticar,                                               atualizacaoCadastralCtrl.buscarPorId);
-router.post("/atualizacao-cadastral",               autenticar, autorizar("gestor","dp","admin","presidente"), atualizacaoCadastralCtrl.criar);
-router.put( "/atualizacao-cadastral/:id/aprovar",   autenticar, autorizar("dp","admin","presidente"),         atualizacaoCadastralCtrl.aprovar);
-router.put( "/atualizacao-cadastral/:id/cancelar",  autenticar, autorizar("gestor","dp","admin","presidente"), atualizacaoCadastralCtrl.cancelar);
+  aprovarBloco: (id, acao, justificativa) =>
+    request(`/blocos/${id}/aprovar`, {
+      method: "PUT",
+      body: JSON.stringify({ acao, justificativa: justificativa || "" }),
+    }),
 
-const telegramCtrl = require("../controllers/telegramController");
-router.post("/telegram/webhook", telegramCtrl.webhook);
+  exportarTxtUrl: () => `${BASE}/api/blocos/exportar/txt`,
 
-// ============================================================
-// PATCH: src/routes/index.js
-// Adicionar ANTES de module.exports = router;
-// ============================================================
+  // ── Usuários ──────────────────────────────────────────────────────────────
+  listarUsuarios: () => request("/usuarios"),
 
-// ── Rescisão Valores ──────────────────────────────────────────────────────────
-const rescisaoCtrl = require("../controllers/rescisaoController");
+  criarUsuario: (data) =>
+    request("/usuarios", { method: "POST", body: JSON.stringify(data) }),
 
-router.get( "/rescisao-valores",                    autenticar, autorizar("dp","admin"),          rescisaoCtrl.listar);
-router.post("/rescisao-valores",                    autenticar, autorizar("dp","admin"),          rescisaoCtrl.lancar);
-router.delete("/rescisao-valores/:id",              autenticar, autorizar("dp","admin"),          rescisaoCtrl.excluir);
-router.get( "/rescisao-valores/desligamento/:id",   autenticar, autorizar("dp","admin"),          rescisaoCtrl.buscarPorDesligamento);
-router.post("/rescisao-valores/importar-lote",        autenticar, autorizar("dp","admin"),          rescisaoCtrl.importarLote);
+  atualizarUsuario: (id, data) =>
+    request(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
-// ============================================================
-// PATCH: src/routes/index.js — adicionar junto com as outras rotas de rescisão
-// ============================================================
+  // ── Auditoria ─────────────────────────────────────────────────────────────
+  listarAuditoria: () => request("/auditoria"),
 
-const rescisaoImportCtrl = require("../controllers/rescisaoImportController");
+  // ── Health ────────────────────────────────────────────────────────────────
+  health: () => request("/health"),
 
-router.post("/rescisao-valores/importar",        autenticar, autorizar("dp","admin"), rescisaoImportCtrl.importar);
-router.get( "/rescisao-valores/testar-conexao",  autenticar, autorizar("dp","admin"), rescisaoImportCtrl.testarConexao);
+  // ── Centro de Custo ───────────────────────────────────────────────────────
+  listarCentrosCusto: () => request("/centros-custo"),
 
+  // ── Autorização de Desconto ───────────────────────────────────────────────
+  listarAutorizacoes: () => request("/autorizacoes"),
+  criarAutorizacao: (data) => request("/autorizacoes", { method: "POST", body: JSON.stringify(data) }),
+  addAnexoAutorizacao: (id, data) => request(`/autorizacoes/${id}/anexo`, { method: "POST", body: JSON.stringify(data) }),
+  cancelarAutorizacao: (id) => request(`/autorizacoes/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
 
-module.exports = router;
+  // ── Hierarquia ────────────────────────────────────────────────────────────
+  listarHierarquia: () => request("/hierarquia"),
+  criarHierarquia:  (data)    => request("/hierarquia",     { method: "POST", body: JSON.stringify(data) }),
+  atualizarHierarquia: (id, data) => request(`/hierarquia/${id}`, { method: "PUT",  body: JSON.stringify(data) }),
+
+  // ── Alçadas ───────────────────────────────────────────────────────────────
+  listarAlcadas:    ()        => request("/alcadas"),
+  criarAlcada:      (data)    => request("/alcadas",        { method: "POST", body: JSON.stringify(data) }),
+  atualizarAlcada:  (id, data)=> request(`/alcadas/${id}`,  { method: "PUT",  body: JSON.stringify(data) }),
+
+  // ── Ocorrências Disciplinares ─────────────────────────────────────────────
+  listarOcorrencias: (qs = "") => request(`/ocorrencias${qs ? "?" + qs : ""}`),
+
+  criarOcorrencia: (data) =>
+    request("/ocorrencias", { method: "POST", body: JSON.stringify(data) }),
+
+  cancelarOcorrencia: (id) =>
+    request(`/ocorrencias/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
+
+  exportarOcorrenciasUrl: () => `${BASE}/api/ocorrencias/exportar`,
+
+  resetarSenhaAdmin: (id, novaSenha) =>
+    request(`/usuarios/${id}/reset-senha`, {
+      method: "PUT",
+      body: JSON.stringify({ novaSenha }),
+    }),
+
+  // ── Desligamentos ─────────────────────────────────────────────────────────
+  validarColaboradorDesligamento: (id) =>
+    request(`/desligamentos/validar-colaborador/${id}`),
+
+  listarDesligamentos: (status = "") =>
+    request(`/desligamentos${status ? "?status=" + status : ""}`),
+
+  buscarDesligamento: (id) => request(`/desligamentos/${id}`),
+
+  criarDesligamento: (data) =>
+    request("/desligamentos", { method: "POST", body: JSON.stringify(data) }),
+
+  cancelarDesligamento: (id) =>
+    request(`/desligamentos/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
+
+  enviarDesligamento: (id) =>
+    request(`/desligamentos/${id}/enviar`, { method: "PUT", body: JSON.stringify({}) }),
+
+  aprovarDesligamento: (id, acao, observacao) =>
+    request(`/desligamentos/${id}/aprovar`, {
+      method: "PUT",
+      body: JSON.stringify({ acao, observacao: observacao || "" }),
+    }),
+
+  addAnexoDesligamento: (id, dados) =>
+    request(`/desligamentos/${id}/anexos`, {
+      method: "POST",
+      body: JSON.stringify(dados),
+    }),
+  
+  addAnexoOcorrencia: (id, dados) =>
+    request(`/ocorrencias/${id}/anexos`, {
+      method: "POST",
+      body: JSON.stringify(dados),
+    }),
+
+  // ── Plano de Saúde ─────────────────────────────────────────────────────────
+  listarPlanoSaude: () => request("/plano-saude"),
+
+  buscarPlanoSaude: (id) => request(`/plano-saude/${id}`),
+
+  criarPlanoSaude: (data) =>
+    request("/plano-saude", { method: "POST", body: JSON.stringify(data) }),
+
+  addAnexoPlanoSaude: (id, dados) =>
+    request(`/plano-saude/${id}/anexos`, {
+      method: "POST",
+      body: JSON.stringify(dados),
+    }),
+
+  cancelarPlanoSaude: (id) =>
+    request(`/plano-saude/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
+  
+  // ── Atualização Cadastral ─────────────────────────────────────────────────
+  listarAtualizacaoCadastral: (params = {}) => {
+    const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v])=>v))).toString();
+    return request(`/atualizacao-cadastral${qs ? "?" + qs : ""}`);
+  },
+  criarAtualizacaoCadastral: (data) =>
+    request("/atualizacao-cadastral", { method: "POST", body: JSON.stringify(data) }),
+  aprovarAtualizacaoCadastral: (id, acao, observacao) =>
+    request(`/atualizacao-cadastral/${id}/aprovar`, { method: "PUT", body: JSON.stringify({ acao, observacao }) }),
+  cancelarAtualizacaoCadastral: (id) =>
+    request(`/atualizacao-cadastral/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
+
+  getToken: () => _accessToken,
+
+  // ── Sistema Disciplinar ────────────────────────────────────────────────────
+  listarCartilha: (categoria) =>
+    request(`/disciplinar/cartilha${categoria ? "?categoria="+encodeURIComponent(categoria) : ""}`),
+  criarCartilha: (data) =>
+    request("/disciplinar/cartilha", { method: "POST", body: JSON.stringify(data) }),
+  atualizarCartilha: (id, data) =>
+    request(`/disciplinar/cartilha/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  sugerirPenalidade: (colaborador_id, cartilha_id) =>
+    request(`/disciplinar/sugerir?colaborador_id=${colaborador_id}&cartilha_id=${cartilha_id}`),
+  listarDisciplinar: (params = {}) => {
+    const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v])=>v))).toString();
+    return request(`/disciplinar${qs ? "?"+qs : ""}`);
+  },
+  buscarDisciplinar: (id) => request(`/disciplinar/${id}`),
+  criarDisciplinar: (data) =>
+    request("/disciplinar", { method: "POST", body: JSON.stringify(data) }),
+  analisarDisciplinar: (id, data) =>
+    request(`/disciplinar/${id}/analisar`, { method: "PUT", body: JSON.stringify(data) }),
+  cancelarDisciplinar: (id) =>
+    request(`/disciplinar/${id}/cancelar`, { method: "PUT", body: JSON.stringify({}) }),
+
+  // ── Rescisão Valores ───────────────────────────────────────────────────────
+  listarRescisaoValores: (mes, ano) =>
+    request(`/rescisao-valores?mes=${mes}&ano=${ano}`),
+  lancarRescisaoValor: (data) =>
+    request("/rescisao-valores", { method: "POST", body: JSON.stringify(data) }),
+  excluirRescisaoValor: (id) =>
+    request(`/rescisao-valores/${id}`, { method: "DELETE" }),
+  buscarRescisaoPorDesligamento: (id) =>
+    request(`/rescisao-valores/desligamento/${id}`),
+  importarRescisaoRM: () =>
+    request("/rescisao-valores/importar", { method: "POST", body: JSON.stringify({}) }),
+  importarRescisaoLote: (registros) =>
+    request("/rescisao-valores/importar-lote", { method: "POST", body: JSON.stringify({ registros }) }),
+  testarConexaoRM: () =>
+    request("/rescisao-valores/testar-conexao"),
+};
