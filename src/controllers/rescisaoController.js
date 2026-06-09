@@ -1,4 +1,4 @@
-// src/controllers/desligamentoController.js
+// src/controllers/desligamentoController.js BACKUP
 "use strict";
 const { DesligamentoModel, AuditoriaModel } = require("../models");
 const db = require("../config/database");
