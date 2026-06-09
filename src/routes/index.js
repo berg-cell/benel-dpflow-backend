@@ -209,4 +209,25 @@ const rescisaoImportCtrl = require("../controllers/rescisaoImportController");
 router.post("/rescisao-valores/importar",        autenticar, autorizar("dp","admin"), rescisaoImportCtrl.importar);
 router.get( "/rescisao-valores/testar-conexao",  autenticar, autorizar("dp","admin"), rescisaoImportCtrl.testarConexao);
 
+// ============================================================
+// PATCH: src/routes/index.js
+// Adicionar ANTES de module.exports = router;
+// ============================================================
+
+// ── Sistema Disciplinar (novo fluxo com Jurídico) ─────────────────────────────
+const disciplinarCtrl = require("../controllers/disciplinarController");
+
+// Cartilha
+router.get(   "/disciplinar/cartilha",         autenticar,                                                       disciplinarCtrl.listarCartilha);
+router.post(  "/disciplinar/cartilha",         autenticar, autorizar("juridico","dp","admin"),                   disciplinarCtrl.criarCartilha);
+router.put(   "/disciplinar/cartilha/:id",     autenticar, autorizar("juridico","dp","admin"),                   disciplinarCtrl.atualizarCartilha);
+router.get(   "/disciplinar/sugerir",          autenticar,                                                       disciplinarCtrl.sugerirPenalidade);
+
+// Solicitações
+router.get(   "/disciplinar",                  autenticar,                                                       disciplinarCtrl.listar);
+router.get(   "/disciplinar/:id",              autenticar,                                                       disciplinarCtrl.buscarPorId);
+router.post(  "/disciplinar",                  autenticar, autorizar("gestor","dp","admin","presidente","juridico"), disciplinarCtrl.criar);
+router.put(   "/disciplinar/:id/analisar",     autenticar, autorizar("juridico","dp","admin"),                   disciplinarCtrl.analisar);
+router.put(   "/disciplinar/:id/cancelar",     autenticar, autorizar("gestor","dp","admin","juridico"),          disciplinarCtrl.cancelar);
+
 module.exports = router;
