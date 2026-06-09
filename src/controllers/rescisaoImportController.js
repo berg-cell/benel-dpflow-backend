@@ -2,8 +2,7 @@
 "use strict";
 const db   = require("../config/database");
 const R    = require("../utils/response");
-let mssql;
-try { mssql = require("mssql"); } catch (_) { mssql = null; }
+const mssql = require("mssql");
 
 const RM_CONFIG = {
   server:   process.env.RM_DB_HOST,
@@ -84,9 +83,6 @@ ORDER BY O.CODFILIAL, PFUNC.NOME, PFFINANC.ANOCOMP, PFFINANC.MESCOMP
 
 // ── Importar do RM ────────────────────────────────────────────────────────────
 exports.importar = async (req, res) => {
-  if (!mssql) {
-    return R.error(res, "Pacote mssql não instalado. Rode: npm install mssql");
-  }
   if (!process.env.RM_DB_HOST) {
     return R.error(res, "Variáveis de ambiente do RM não configuradas (RM_DB_HOST, RM_DB_NAME, RM_DB_USER, RM_DB_PASS)");
   }
@@ -205,9 +201,6 @@ exports.importar = async (req, res) => {
 
 // ── Testar conexão com RM ─────────────────────────────────────────────────────
 exports.testarConexao = async (req, res) => {
-  if (!mssql) {
-    return R.error(res, "Pacote mssql não instalado. Rode: npm install mssql");
-  }
   if (!process.env.RM_DB_HOST) {
     return R.error(res, "Variáveis RM_DB_HOST, RM_DB_NAME, RM_DB_USER, RM_DB_PASS não configuradas");
   }
