@@ -1,225 +1,210 @@
-// src/controllers/rescisaoController.js
+// src/controllers/desligamentoController.js
 "use strict";
+const { DesligamentoModel, AuditoriaModel } = require("../models");
 const db = require("../config/database");
-const R  = require("../utils/response");
+const R = require("../utils/response");
+const tg = require("../services/telegram");
 
-// ── Listar por competência ────────────────────────────────────────────────────
-exports.listar = async (req, res) => {
+// ── Validar colaborador para desligamento ─────────────────────────────────────
+exports.validarColaborador = async (req, res) => {
   try {
-    const { mes, ano } = req.query;
-    const params = [];
-    let where = ["1=1"];
+    const { id } = req.params;
+    const r = await db.query("SELECT * FROM colaboradores WHERE id = $1", [id]);
+    if (!r.rowCount) return R.notFound(res, "Colaborador não encontrado");
 
-    if (mes) { where.push(`competencia_mes=$${params.length+1}`); params.push(parseInt(mes)); }
-    if (ano) { where.push(`competencia_ano=$${params.length+1}`); params.push(parseInt(ano)); }
+    const c = r.rows[0];
 
-    const { rows } = await db.query(`
-      SELECT rv.*
-      FROM rescisao_valores rv
-      WHERE ${where.join(" AND ")}
-      ORDER BY rv.filial, rv.criado_em DESC
-    `, params);
-
-    return R.success(res, rows);
-  } catch (e) { return R.error(res, e.message); }
-};
-
-// ── Lançar / atualizar valor ──────────────────────────────────────────────────
-exports.lancar = async (req, res) => {
-  try {
-    const {
-      desligamento_id, chapa, nome, filial,
-      valor_total, liquido, proventos, descontos, fgts_rescisorio,
-      competencia_mes, competencia_ano, observacao
-    } = req.body;
-
-    if ((!desligamento_id && !chapa) || !competencia_mes || !competencia_ano)
-      return R.badRequest(res, "desligamento_id ou chapa, competencia_mes e competencia_ano são obrigatórios");
-
-    // Buscar desligamento — por id ou por chapa
-    let desl = null;
-    if (desligamento_id) {
-      const { rows: desls } = await db.query(`
-        SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
-        FROM solicitacao_desligamento sd
-        LEFT JOIN colaboradores c ON c.chapa = sd.chapa
-        WHERE sd.id = $1
-      `, [desligamento_id]);
-      desl = desls[0];
-    } else {
-      const { rows: desls } = await db.query(`
-        SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
-        FROM solicitacao_desligamento sd
-        LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
-        WHERE c.chapa = $1
-        ORDER BY sd.criado_em DESC LIMIT 1
-      `, [String(chapa).trim()]);
-      desl = desls[0];
+    if (c.cod_situacao === "D") {
+      return R.success(res, {
+        apto: false,
+        motivo: "situacao",
+        mensagem: "Colaborador não pode ser selecionado para desligamento, pois já consta com situação Demitido.",
+      });
     }
 
-    if (!desl) {
-      // Se não achar desligamento, cria registro sem vínculo
-      desl = {
-        col_id: null,
-        col_nome: nome,
-        col_chapa: chapa,
-        descricao_filial: filial,
-        tipo: null,
-        id: null,
-      };
-    }
+    if (c.data_fim_estabilidade) {
+      const fimEstab = new Date(c.data_fim_estabilidade);
+      fimEstab.setHours(0, 0, 0, 0);
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
 
-    // Upsert — um lançamento por desligamento
-    const vTotal   = parseFloat(valor_total || total || 0);
-    const vLiquido = parseFloat(liquido   || 0);
-    const vProv    = parseFloat(proventos || 0);
-    const vDesc    = parseFloat(descontos || 0);
-    const vFgts    = parseFloat(fgts_rescisorio || 0);
-    const filialFinal = filial || desl.descricao_filial || "Sem Filial";
-
-    const { rows } = await db.query(`
-      INSERT INTO rescisao_valores
-        (desligamento_id, colaborador_id, colaborador_nome, colaborador_chapa,
-         filial, tipo_desligamento, valor_total,
-         liquido, proventos, descontos, fgts_rescisorio,
-         competencia_mes, competencia_ano, observacao,
-         lancado_por_id, lancado_por_nome)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-      ON CONFLICT (desligamento_id, competencia_mes, competencia_ano) DO UPDATE SET
-        valor_total       = EXCLUDED.valor_total,
-        liquido           = EXCLUDED.liquido,
-        proventos         = EXCLUDED.proventos,
-        descontos         = EXCLUDED.descontos,
-        fgts_rescisorio   = EXCLUDED.fgts_rescisorio,
-        observacao        = EXCLUDED.observacao,
-        lancado_por_id    = EXCLUDED.lancado_por_id,
-        lancado_por_nome  = EXCLUDED.lancado_por_nome,
-        atualizado_em     = NOW()
-      RETURNING *
-    `, [
-      desl.id || null,
-      desl.col_id || null,
-      desl.col_nome || nome,
-      desl.col_chapa || chapa,
-      filialFinal,
-      desl.tipo || null,
-      vTotal,
-      vLiquido, vProv, vDesc, vFgts,
-      parseInt(competencia_mes),
-      parseInt(competencia_ano),
-      observacao || null,
-      req.usuario.id,
-      req.usuario.nome,
-    ]);
-
-    return R.created(res, rows[0], "Valor lançado com sucesso");
-  } catch (e) { return R.error(res, e.message); }
-};
-
-// ── Importar em lote (CSV) ───────────────────────────────────────────────────
-exports.importarLote = async (req, res) => {
-  try {
-    const { registros } = req.body;
-    if (!Array.isArray(registros) || registros.length === 0)
-      return R.badRequest(res, "Lista de registros vazia");
-
-    let inseridos = 0, atualizados = 0;
-    const erros = [];
-
-    for (const reg of registros) {
-      try {
-        const { chapa, nome, filial, liquido, proventos, descontos,
-                fgts_rescisorio, valor_total, competencia_mes, competencia_ano } = reg;
-
-        if (!chapa || !competencia_mes || !competencia_ano) {
-          erros.push(`Chapa ${chapa}: dados incompletos`);
-          continue;
-        }
-
-        // Buscar colaborador e desligamento
-        const { rows: colabs } = await db.query(
-          "SELECT id, descricao_filial, nome FROM colaboradores WHERE chapa=$1 LIMIT 1",
-          [String(chapa).trim()]
-        );
-
-        const { rows: desls } = await db.query(`
-          SELECT sd.id, sd.tipo
-          FROM solicitacao_desligamento sd
-          LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
-          WHERE c.chapa = $1
-          ORDER BY sd.criado_em DESC LIMIT 1
-        `, [String(chapa).trim()]);
-
-        const col       = colabs[0];
-        const desl      = desls[0];
-        const filialFinal = col?.descricao_filial || filial || "Sem Filial";
-
-        const { rows: existing } = await db.query(
-          "SELECT id FROM rescisao_valores WHERE colaborador_chapa=$1 AND competencia_mes=$2 AND competencia_ano=$3",
-          [String(chapa).trim(), parseInt(competencia_mes), parseInt(competencia_ano)]
-        );
-
-        if (existing[0]) {
-          await db.query(`
-            UPDATE rescisao_valores SET
-              liquido=$1, proventos=$2, descontos=$3, fgts_rescisorio=$4, valor_total=$5,
-              lancado_por_id=$6, lancado_por_nome=$7, atualizado_em=NOW()
-            WHERE id=$8
-          `, [
-            parseFloat(liquido)||0, parseFloat(proventos)||0, parseFloat(descontos)||0,
-            parseFloat(fgts_rescisorio)||0, parseFloat(valor_total)||0,
-            req.usuario.id, req.usuario.nome, existing[0].id
-          ]);
-          atualizados++;
-        } else {
-          await db.query(`
-            INSERT INTO rescisao_valores
-              (desligamento_id, colaborador_id, colaborador_nome, colaborador_chapa,
-               filial, tipo_desligamento, liquido, proventos, descontos,
-               fgts_rescisorio, valor_total, competencia_mes, competencia_ano,
-               lancado_por_id, lancado_por_nome)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-          `, [
-            desl?.id || null,
-            col?.id  || null,
-            col?.nome || nome,
-            String(chapa).trim(),
-            filialFinal,
-            desl?.tipo || null,
-            parseFloat(liquido)||0, parseFloat(proventos)||0, parseFloat(descontos)||0,
-            parseFloat(fgts_rescisorio)||0, parseFloat(valor_total)||0,
-            parseInt(competencia_mes), parseInt(competencia_ano),
-            req.usuario.id, req.usuario.nome
-          ]);
-          inseridos++;
-        }
-      } catch (e) {
-        erros.push(`Chapa ${reg.chapa}: ${e.message}`);
+      if (fimEstab >= hoje) {
+        const fmtBR = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+        return R.success(res, {
+          apto: false,
+          motivo: "estabilidade",
+          mensagem: `Este colaborador não pode ser desligado, pois possui estabilidade ativa: ${c.descricao_estabilidade || "Estabilidade"}. A estabilidade encerra em ${fmtBR(fimEstab)}.`,
+          data_fim_estabilidade: c.data_fim_estabilidade,
+          descricao_estabilidade: c.descricao_estabilidade,
+        });
       }
     }
 
-    return R.success(res, { inseridos, atualizados, erros, total: registros.length },
-      `Importação concluída: ${inseridos} inserido(s), ${atualizados} atualizado(s)`
-    );
+    return R.success(res, { apto: true });
   } catch (e) { return R.error(res, e.message); }
 };
 
-// ── Excluir lançamento ────────────────────────────────────────────────────────
-exports.excluir = async (req, res) => {
+const ALCADA = {
+  pendente_superior: ["superior", "dp", "admin"],
+  aprovado:          ["dp", "admin"],
+  ajuste_solicitado: ["gestor", "dp", "admin"],
+};
+
+exports.listar = async (req, res) => {
   try {
-    const { id } = req.params;
-    await db.query("DELETE FROM rescisao_valores WHERE id=$1", [id]);
-    return R.success(res, {}, "Lançamento excluído");
+    const { status } = req.query;
+    const r = await DesligamentoModel.findAll({
+      gestor_id: req.usuario.id,
+      status,
+      perfil: req.usuario.perfil,
+    });
+    return R.success(res, r.rows);
   } catch (e) { return R.error(res, e.message); }
 };
 
-// ── Buscar por desligamento_id ────────────────────────────────────────────────
-exports.buscarPorDesligamento = async (req, res) => {
+exports.buscarPorId = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { rows } = await db.query(
-      "SELECT * FROM rescisao_valores WHERE desligamento_id=$1", [id]
+    const r = await DesligamentoModel.findById(req.params.id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+    if (req.usuario.perfil === "gestor" && sol.gestor_id !== req.usuario.id)
+      return R.forbidden(res, "Acesso negado");
+    const [logs, anexos] = await Promise.all([
+      DesligamentoModel.findLogs(sol.id),
+      DesligamentoModel.findAnexos(sol.id),
+    ]);
+    return R.success(res, { ...sol, logs: logs.rows, anexos: anexos.rows });
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.criar = async (req, res) => {
+  try {
+    const sol = await DesligamentoModel.create(req.body, req.usuario.id);
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CRIADO",
+      tabela: "solicitacao_desligamento", registro_id: sol.id,
+      dados_depois: req.body, ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+
+    // Notificação Telegram
+    try {
+      const { rows: colabNotif } = await db.query(
+        "SELECT nome, chapa, funcao, centro_custo, desc_cc, descricao_filial FROM colaboradores WHERE id=$1",
+        [req.body.colaborador_id]
+      );
+      await Promise.race([
+        tg.notificar(req.usuario.id, "desligamento", {
+          desligamento_id:  sol.id,
+          colaborador_nome: colabNotif[0]?.nome,
+          chapa:            colabNotif[0]?.chapa,
+          funcao:           colabNotif[0]?.funcao,
+          filial:           colabNotif[0]?.descricao_filial,
+          centro_custo:     colabNotif[0]?.centro_custo,
+          desc_cc:          colabNotif[0]?.desc_cc,
+          solicitante:      req.usuario.nome,
+          tipo:             req.body.tipo_desligamento || req.body.tipo || req.body.motivo,
+          motivo:           req.body.justificativa || req.body.observacao,
+        }),
+        new Promise(r => setTimeout(r, 4000))
+      ]);
+    } catch (_) {}
+
+    return R.created(res, sol, "Solicitação criada com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.enviar = async (req, res) => {
+  try {
+    const sol = await DesligamentoModel.enviar(req.params.id, req.usuario.id);
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_ENVIADO",
+      tabela: "solicitacao_desligamento", registro_id: sol.id,
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, sol, "Solicitação enviada para aprovação");
+  } catch (e) { return R.error(res, e.message, e.status || 500); }
+};
+
+exports.aprovar = async (req, res) => {
+  try {
+    const { acao, observacao } = req.body;
+    const id = parseInt(req.params.id);
+    const r = await DesligamentoModel.findById(id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+
+    const perfil = req.usuario.perfil;
+    const userId = req.usuario.id;
+
+    if (!ALCADA[sol.status]?.includes(perfil))
+      return R.forbidden(res, "Você não tem permissão para agir neste status");
+
+    if (sol.status === "pendente_superior" && perfil !== "admin" && perfil !== "dp") {
+      if (!sol.superior_id)
+        return R.forbidden(res, "Esta solicitação não possui superior vinculado na hierarquia. Contate o administrador.");
+      if (sol.superior_id !== userId)
+        return R.forbidden(res, "Você não é o superior responsável por esta solicitação conforme a hierarquia cadastrada.");
+    }
+
+    const novoStatus = await DesligamentoModel.avancarStatus(id, userId, acao, observacao);
+    await AuditoriaModel.registrar({
+      usuario_id: userId, acao: `DESLIGAMENTO_${acao.toUpperCase()}`,
+      tabela: "solicitacao_desligamento", registro_id: id,
+      dados_antes: { status: sol.status },
+      dados_depois: { status: novoStatus, observacao },
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, { novoStatus }, "Ação realizada com sucesso");
+  } catch (e) { return R.error(res, e.message, e.status || 500); }
+};
+
+exports.addAnexo = async (req, res) => {
+  try {
+    const { nome_arquivo, tipo_arquivo, dados_base64 } = req.body;
+    if (!nome_arquivo || !dados_base64)
+      return R.badRequest(res, "Nome e dados do arquivo são obrigatórios");
+    if (dados_base64.length > 5 * 1024 * 1024)
+      return R.badRequest(res, "Arquivo muito grande (máximo 5MB)");
+    const r = await DesligamentoModel.addAnexo(
+      req.params.id, req.usuario.id,
+      { nome_arquivo, tipo_arquivo, dados_base64 }
     );
-    return R.success(res, rows[0] || null);
+    return R.created(res, r.rows[0], "Anexo adicionado com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.getAnexo = async (req, res) => {
+  try {
+    const r = await DesligamentoModel.getAnexo(req.params.anexoId);
+    if (!r.rowCount) return R.notFound(res, "Anexo não encontrado");
+    return R.success(res, r.rows[0]);
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.cancelar = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const r = await DesligamentoModel.findById(id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+    if (["cancelado","finalizado"].includes(sol.status))
+      return R.badRequest(res, `Não é possível cancelar uma solicitação com status "${sol.status}"`);
+    await db.query(
+      `UPDATE solicitacao_desligamento SET status='cancelado', atualizado_em=NOW() WHERE id=$1`, [id]
+    );
+    await db.query(
+      `INSERT INTO solicitacao_desligamento_logs(solicitacao_id,usuario_id,acao,observacao,dados_antes,dados_depois)
+       VALUES($1,$2,'cancelado',$3,$4,$5)`,
+      [id, req.usuario.id, "Cancelado pelo administrador",
+       JSON.stringify({ status: sol.status }),
+       JSON.stringify({ status: "cancelado" })]
+    );
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CANCELADO",
+      tabela: "solicitacao_desligamento", registro_id: id,
+      dados_antes: { status: sol.status }, dados_depois: { status: "cancelado" },
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, {}, "Solicitação cancelada com sucesso");
   } catch (e) { return R.error(res, e.message); }
 };
