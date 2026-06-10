@@ -3,7 +3,7 @@ const express    = require("express");
 const router     = express.Router();
 
 // ── Middlewares ───────────────────────────────────────────────────────────────
-const { autenticar, autorizar } = require("../middleware/auth");
+const { autenticar, autorizar } = require("../middlewares");
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 const authCtrl             = require("../controllers/authController");
