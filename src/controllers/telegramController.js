@@ -1,189 +1,193 @@
-// src/controllers/telegramController.js
+// src/controllers/desligamentoController.js
 "use strict";
-const tg = require("../services/telegram");
+const { DesligamentoModel, AuditoriaModel } = require("../models");
 const db = require("../config/database");
+const R = require("../utils/response");
 
-exports.webhook = async (req, res) => {
-  res.sendStatus(200);
-  processarUpdate(req.body).catch(() => {});
+// ── Validar colaborador para desligamento ─────────────────────────────────────
+exports.validarColaborador = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await db.query("SELECT * FROM colaboradores WHERE id = $1", [id]);
+    if (!r.rowCount) return R.notFound(res, "Colaborador não encontrado");
+
+    const c = r.rows[0];
+
+    // Regra 1 — situação "D" (demitido)
+    if (c.cod_situacao === "D") {
+      return R.success(res, {
+        apto: false,
+        motivo: "situacao",
+        mensagem: "Colaborador não pode ser selecionado para desligamento, pois já consta com situação Demitido.",
+      });
+    }
+
+    // Regra 2 — estabilidade ativa
+    if (c.data_fim_estabilidade) {
+      const fimEstab = new Date(c.data_fim_estabilidade);
+      fimEstab.setHours(0, 0, 0, 0);
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      if (fimEstab >= hoje) {
+        const fmtBR = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+        return R.success(res, {
+          apto: false,
+          motivo: "estabilidade",
+          mensagem: `Este colaborador não pode ser desligado, pois possui estabilidade ativa: ${c.descricao_estabilidade || "Estabilidade"}. A estabilidade encerra em ${fmtBR(fimEstab)}.`,
+          data_fim_estabilidade: c.data_fim_estabilidade,
+          descricao_estabilidade: c.descricao_estabilidade,
+        });
+      }
+    }
+
+    // Apto
+    return R.success(res, { apto: true });
+  } catch (e) { return R.error(res, e.message); }
 };
 
-async function processarUpdate(update) {
+
+const ALCADA = {
+  pendente_superior: ["superior", "dp", "admin"],
+  // 2ª alçada — descomente quando quiser ativar:
+  // pendente_dp:    ["dp", "admin"],
+  aprovado:          ["dp", "admin"],
+  ajuste_solicitado: ["gestor", "dp", "admin"],
+};
+
+exports.listar = async (req, res) => {
   try {
-    // ── Callback Query (botões inline) ───────────────────────────────────────
-    if (update?.callback_query) {
-      await processarCallback(update.callback_query);
-      return;
+    const { status } = req.query;
+    const r = await DesligamentoModel.findAll({
+      gestor_id: req.usuario.id,
+      status,
+      perfil: req.usuario.perfil,
+    });
+    return R.success(res, r.rows);
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.buscarPorId = async (req, res) => {
+  try {
+    const r = await DesligamentoModel.findById(req.params.id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+    if (req.usuario.perfil === "gestor" && sol.gestor_id !== req.usuario.id)
+      return R.forbidden(res, "Acesso negado");
+    const [logs, anexos] = await Promise.all([
+      DesligamentoModel.findLogs(sol.id),
+      DesligamentoModel.findAnexos(sol.id),
+    ]);
+    return R.success(res, { ...sol, logs: logs.rows, anexos: anexos.rows });
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.criar = async (req, res) => {
+  try {
+    const sol = await DesligamentoModel.create(req.body, req.usuario.id);
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CRIADO",
+      tabela: "solicitacao_desligamento", registro_id: sol.id,
+      dados_depois: req.body, ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.created(res, sol, "Solicitação criada com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
+
+exports.enviar = async (req, res) => {
+  try {
+    const sol = await DesligamentoModel.enviar(req.params.id, req.usuario.id);
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_ENVIADO",
+      tabela: "solicitacao_desligamento", registro_id: sol.id,
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, sol, "Solicitação enviada para aprovação");
+  } catch (e) { return R.error(res, e.message, e.status || 500); }
+};
+
+exports.aprovar = async (req, res) => {
+  try {
+    const { acao, observacao } = req.body;
+    const id = parseInt(req.params.id);
+    const r = await DesligamentoModel.findById(id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+
+    const perfil = req.usuario.perfil;
+    const userId = req.usuario.id;
+
+    // Verifica alçada pelo perfil
+    if (!ALCADA[sol.status]?.includes(perfil))
+      return R.forbidden(res, "Você não tem permissão para agir neste status");
+
+    // Para 1ª alçada (superior): valida se é o superior vinculado na hierarquia
+    if (sol.status === "pendente_superior" && perfil !== "admin" && perfil !== "dp") {
+      if (!sol.superior_id)
+        return R.forbidden(res, "Esta solicitação não possui superior vinculado na hierarquia. Contate o administrador.");
+      if (sol.superior_id !== userId)
+        return R.forbidden(res, "Você não é o superior responsável por esta solicitação conforme a hierarquia cadastrada.");
     }
 
-    // ── Mensagem de texto ────────────────────────────────────────────────────
-    const msg   = update?.message;
-    if (!msg) return;
-    const chatId = msg.chat?.id;
-    const texto  = (msg.text || "").trim();
+    const novoStatus = await DesligamentoModel.avancarStatus(id, userId, acao, observacao);
+    await AuditoriaModel.registrar({
+      usuario_id: userId, acao: `DESLIGAMENTO_${acao.toUpperCase()}`,
+      tabela: "solicitacao_desligamento", registro_id: id,
+      dados_antes: { status: sol.status },
+      dados_depois: { status: novoStatus, observacao },
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, { novoStatus }, "Ação realizada com sucesso");
+  } catch (e) { return R.error(res, e.message, e.status || 500); }
+};
 
-    if (texto === "/start" || texto.startsWith("/start ")) {
-      await tg.enviarMensagem(chatId,
-        `👋 <b>Bem-vindo ao DP Flow Benel!</b>\n\n` +
-        `Para receber notificações, envie:\n\n` +
-        `<code>/vincular seu@email.com.br</code>`
-      );
-      return;
-    }
-
-    if (texto.startsWith("/vincular ")) {
-      const email = texto.replace("/vincular ", "").trim().toLowerCase();
-      if (!email.includes("@")) {
-        await tg.enviarMensagem(chatId, "❌ E-mail inválido.\n<code>/vincular seu@email.com.br</code>");
-        return;
-      }
-      const { rows } = await Promise.race([
-        db.query("SELECT id, nome FROM usuarios WHERE LOWER(email)=$1 AND ativo=true", [email]),
-        new Promise((_, rj) => setTimeout(() => rj(new Error("timeout")), 5000))
-      ]);
-      if (!rows[0]) {
-        await tg.enviarMensagem(chatId, `❌ E-mail não encontrado no DP Flow.`);
-        return;
-      }
-      await db.query(
-        "UPDATE usuarios SET telegram_chat_id=NULL WHERE telegram_chat_id=$1 AND id!=$2",
-        [String(chatId), rows[0].id]
-      );
-      await db.query(
-        "UPDATE usuarios SET telegram_chat_id=$1, atualizado_em=NOW() WHERE id=$2",
-        [String(chatId), rows[0].id]
-      );
-      await tg.enviarMensagem(chatId,
-        `✅ <b>Vinculado com sucesso!</b>\n\nOlá, <b>${rows[0].nome}</b>!\n` +
-        `Você receberá notificações e poderá aprovar solicitações de desligamento aqui.\n\n` +
-        `<code>/sair</code> para desvincular.`
-      );
-      return;
-    }
-
-    if (texto === "/sair") {
-      await db.query(
-        "UPDATE usuarios SET telegram_chat_id=NULL WHERE telegram_chat_id=$1", [String(chatId)]
-      );
-      await tg.enviarMensagem(chatId, `👋 Desvinculado.\n\n<code>/start</code> para reativar.`);
-      return;
-    }
-
-    if (texto === "/status") {
-      const { rows } = await db.query(
-        "SELECT nome, email, perfil FROM usuarios WHERE telegram_chat_id=$1", [String(chatId)]
-      );
-      if (rows[0]) {
-        await tg.enviarMensagem(chatId,
-          `✅ <b>${rows[0].nome}</b>\n📧 ${rows[0].email}\n🔑 Perfil: ${rows[0].perfil}\n\n<code>/sair</code> para desvincular.`
-        );
-      } else {
-        await tg.enviarMensagem(chatId, `❌ Não vinculado.\n\n<code>/vincular seu@email.com.br</code>`);
-      }
-      return;
-    }
-
-    await tg.enviarMensagem(chatId,
-      `🤖 Comandos:\n\n` +
-      `<code>/start</code> — Iniciar\n` +
-      `<code>/vincular email</code> — Vincular conta\n` +
-      `<code>/status</code> — Ver conta\n` +
-      `<code>/sair</code> — Desvincular`
+exports.addAnexo = async (req, res) => {
+  try {
+    const { nome_arquivo, tipo_arquivo, dados_base64 } = req.body;
+    if (!nome_arquivo || !dados_base64)
+      return R.badRequest(res, "Nome e dados do arquivo são obrigatórios");
+    if (dados_base64.length > 5 * 1024 * 1024)
+      return R.badRequest(res, "Arquivo muito grande (máximo 5MB)");
+    const r = await DesligamentoModel.addAnexo(
+      req.params.id, req.usuario.id,
+      { nome_arquivo, tipo_arquivo, dados_base64 }
     );
+    return R.created(res, r.rows[0], "Anexo adicionado com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
 
-  } catch (e) {
-    console.error("[TelegramWebhook] Erro:", e.message);
-  }
-}
+exports.getAnexo = async (req, res) => {
+  try {
+    const r = await DesligamentoModel.getAnexo(req.params.anexoId);
+    if (!r.rowCount) return R.notFound(res, "Anexo não encontrado");
+    return R.success(res, r.rows[0]);
+  } catch (e) { return R.error(res, e.message); }
+};
 
-// ── Processar clique nos botões inline ────────────────────────────────────────
-async function processarCallback(cb) {
-  const chatId          = cb.from?.id;
-  const callbackQueryId = cb.id;
-  const data            = cb.data || "";
-  const messageId       = cb.message?.message_id;
-
-  // Verificar se o usuário tem permissão (dp ou admin)
-  const { rows: usuarios } = await db.query(
-    "SELECT id, nome, perfil FROM usuarios WHERE telegram_chat_id=$1 AND perfil IN ('dp','admin','presidente') AND ativo=true",
-    [String(chatId)]
-  );
-
-  if (!usuarios[0]) {
-    await tg.responderCallback(callbackQueryId, "❌ Você não tem permissão para esta ação.");
-    return;
-  }
-
-  const usuario = usuarios[0];
-
-  // ── Aprovar/Reprovar desligamento ─────────────────────────────────────────
-  if (data.startsWith("aprovar_desl_") || data.startsWith("reprovar_desl_")) {
-    const acao  = data.startsWith("aprovar_desl_") ? "aprovar" : "reprovar";
-    const solId = parseInt(data.replace("aprovar_desl_", "").replace("reprovar_desl_", ""));
-
-    // Buscar solicitação
-    const { rows: sols } = await db.query(
-      "SELECT * FROM solicitacao_desligamento WHERE id=$1", [solId]
-    );
-
-    if (!sols[0]) {
-      await tg.responderCallback(callbackQueryId, "❌ Solicitação não encontrada.");
-      return;
-    }
-
-    const sol = sols[0];
-
-    if (!["pendente_superior","aprovado","ajuste_solicitado"].includes(sol.status)) {
-      await tg.responderCallback(callbackQueryId, `⚠️ Solicitação já está em status: ${sol.status}`);
-      return;
-    }
-
-    // Avançar status
-    const PROXIMO = {
-      pendente_superior: { aprovar: "aprovado",  reprovar: "reprovado" },
-      aprovado:          { aprovar: "finalizado", reprovar: "reprovado" },
-      ajuste_solicitado: { aprovar: "aprovado",   reprovar: "reprovado" },
-    };
-    const novoStatus = PROXIMO[sol.status]?.[acao] || (acao === "aprovar" ? "aprovado" : "reprovado");
-
+exports.cancelar = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const r = await DesligamentoModel.findById(id);
+    if (!r.rowCount) return R.notFound(res, "Solicitação não encontrada");
+    const sol = r.rows[0];
+    if (["cancelado","finalizado"].includes(sol.status))
+      return R.badRequest(res, `Não é possível cancelar uma solicitação com status "${sol.status}"`);
     await db.query(
-      `UPDATE solicitacao_desligamento SET status=$1, atualizado_em=NOW() WHERE id=$2`,
-      [novoStatus, solId]
+      `UPDATE solicitacao_desligamento SET status='cancelado', atualizado_em=NOW() WHERE id=$1`, [id]
     );
-
     await db.query(
-      `INSERT INTO solicitacao_desligamento_logs(solicitacao_id, usuario_id, acao, observacao, dados_antes, dados_depois)
-       VALUES($1,$2,$3,$4,$5,$6)`,
-      [solId, usuario.id, acao,
-       `${acao === "aprovar" ? "Aprovado" : "Reprovado"} via Telegram por ${usuario.nome}`,
+      `INSERT INTO solicitacao_desligamento_logs(solicitacao_id,usuario_id,acao,observacao,dados_antes,dados_depois)
+       VALUES($1,$2,'cancelado',$3,$4,$5)`,
+      [id, req.usuario.id, "Cancelado pelo administrador",
        JSON.stringify({ status: sol.status }),
-       JSON.stringify({ status: novoStatus })]
+       JSON.stringify({ status: "cancelado" })]
     );
-
-    const emoji  = acao === "aprovar" ? "✅" : "❌";
-    const label  = acao === "aprovar" ? "APROVADO" : "REPROVADO";
-
-    // Responder o callback (remove loading do botão)
-    await tg.responderCallback(callbackQueryId, `${emoji} ${label} com sucesso!`);
-
-    // Editar a mensagem original removendo os botões e adicionando status
-    const msgOriginal = cb.message?.text || "";
-    await tg.editarMensagem(chatId, messageId,
-      `${msgOriginal}\n\n${emoji} <b>${label}</b> por ${usuario.nome}`
-    );
-
-    // Notificar outros usuários dp/admin sobre a ação
-    const { rows: outros } = await db.query(
-      "SELECT telegram_chat_id FROM usuarios WHERE perfil IN ('dp','admin') AND ativo=true AND telegram_chat_id IS NOT NULL AND telegram_chat_id!=$1",
-      [String(chatId)]
-    );
-    if (outros.length) {
-      const aviso = `${emoji} Solicitação #${solId} foi <b>${label}</b> por <b>${usuario.nome}</b> via Telegram.`;
-      await Promise.all(outros.map(u => tg.enviarMensagem(u.telegram_chat_id, aviso)));
-    }
-
-    return;
-  }
-
-  await tg.responderCallback(callbackQueryId, "Ação não reconhecida.");
-}
+    await AuditoriaModel.registrar({
+      usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CANCELADO",
+      tabela: "solicitacao_desligamento", registro_id: id,
+      dados_antes: { status: sol.status }, dados_depois: { status: "cancelado" },
+      ip: req.ip, user_agent: req.headers["user-agent"],
+    });
+    return R.success(res, {}, "Solicitação cancelada com sucesso");
+  } catch (e) { return R.error(res, e.message); }
+};
