@@ -1,181 +1,80 @@
-// src/controllers/atualizacaoCadastralController.js
+// src/controllers/autorizacaoController.js
 "use strict";
 const db = require("../config/database");
 const R  = require("../utils/response");
-const tg = require("../services/telegram");
 
-const CAMPOS_PERMITIDOS = {
-  posicao_escala:   { label: "Posição Escala",    dominio: ["FA","FE","FO","NA","TI"] },
-  motorista_lider:  { label: "Motorista Líder",   dominio: ["T","F"] },
-  munkeiro:         { label: "Munkeiro",           dominio: ["T","F"] },
-  prancheiro:       { label: "Prancheiro",         dominio: ["T","F"] },
-  tamanho_macacao:  { label: "Tamanho Macacão",    dominio: ["PP","P","M","G","GG","EG","EEG"] },
-  tamanho_bota:     { label: "Tamanho Bota",       dominio: Array.from({length:15},(_,i)=>String(34+i)) },
-};
-
-// ── Listar ────────────────────────────────────────────────────────────────────
 exports.listar = async (req, res) => {
   try {
-    const { status, data_inicio, data_fim, solicitante } = req.query;
-    let where = ["1=1"];
+    const { perfil, id: userId } = req.usuario;
+    let q = `SELECT * FROM autorizacao_desconto WHERE 1=1`;
     const p = [];
-    if (status && status !== "todos") { where.push(`ac.status=$${p.length+1}`); p.push(status); }
-    if (data_inicio) { where.push(`ac.criado_em>=$${p.length+1}`); p.push(data_inicio); }
-    if (data_fim)    { where.push(`ac.criado_em<=$${p.length+1}`); p.push(data_fim+"T23:59:59"); }
-    if (solicitante) { where.push(`LOWER(ac.usuario_solicitante_nome) LIKE $${p.length+1}`); p.push(`%${solicitante.toLowerCase()}%`); }
-
-    const { rows } = await db.query(`
-      SELECT ac.*,
-             c.chapa, c.nome AS colaborador_nome, c.funcao, c.data_admissao,
-             c.cod_situacao,
-             COALESCE(json_agg(aci.* ORDER BY aci.id) FILTER (WHERE aci.id IS NOT NULL), '[]') AS itens
-      FROM atualizacao_cadastral ac
-      JOIN colaboradores c ON ac.colaborador_id = c.id
-      LEFT JOIN atualizacao_cadastral_itens aci ON aci.solicitacao_id = ac.id
-      WHERE ${where.join(" AND ")}
-      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao, c.cod_situacao
-      ORDER BY ac.criado_em DESC
-    `, p);
-    return R.success(res, rows);
+    if (perfil === "gestor") { q += ` AND gestor_id=$1`; p.push(userId); }
+    q += ` ORDER BY criado_em DESC`;
+    const r = await db.query(q, p);
+    return R.success(res, r.rows);
   } catch (e) { return R.error(res, e.message); }
 };
 
-// ── Buscar por ID ─────────────────────────────────────────────────────────────
-exports.buscarPorId = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { rows } = await db.query(`
-      SELECT ac.*,
-             c.chapa, c.nome AS colaborador_nome, c.funcao, c.data_admissao,
-             c.posicao_escala, c.motorista_lider, c.munkeiro, c.prancheiro,
-             c.tamanho_macacao, c.tamanho_bota,
-             COALESCE(json_agg(aci.* ORDER BY aci.id) FILTER (WHERE aci.id IS NOT NULL), '[]') AS itens
-      FROM atualizacao_cadastral ac
-      JOIN colaboradores c ON ac.colaborador_id = c.id
-      LEFT JOIN atualizacao_cadastral_itens aci ON aci.solicitacao_id = ac.id
-      WHERE ac.id = $1
-      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao,
-               c.posicao_escala, c.motorista_lider, c.munkeiro, c.prancheiro,
-               c.tamanho_macacao, c.tamanho_bota
-    `, [id]);
-    if (!rows[0]) return R.notFound(res, "Solicitação não encontrada");
-    return R.success(res, rows[0]);
-  } catch (e) { return R.error(res, e.message); }
-};
-
-// ── Criar solicitação ─────────────────────────────────────────────────────────
 exports.criar = async (req, res) => {
   try {
-    const { colaborador_id, itens, observacao } = req.body;
-    if (!colaborador_id || !Array.isArray(itens) || itens.length === 0)
-      return R.badRequest(res, "colaborador_id e itens são obrigatórios");
+    const { colaborador_id, colaborador_nome, colaborador_cpf,
+            valor_total, num_parcelas, mes_inicio, ano_inicio,
+            data_ocorrido, descricao_prejuizo, observacoes } = req.body;
 
-    // Validar colaborador ativo
-    const { rows: colabs } = await db.query(
-      "SELECT id, cod_situacao, posicao_escala, motorista_lider, munkeiro, prancheiro, tamanho_macacao, tamanho_bota FROM colaboradores WHERE id=$1",
-      [colaborador_id]
+    if (!valor_total || !mes_inicio || !ano_inicio)
+      return R.badRequest(res, "Campos obrigatórios: valor_total, mes_inicio, ano_inicio");
+
+    const r = await db.query(
+      `INSERT INTO autorizacao_desconto
+         (colaborador_id, colaborador_nome, colaborador_cpf,
+          gestor_id, gestor_nome,
+          valor_total, num_parcelas, mes_inicio, ano_inicio,
+          data_ocorrido, descricao_prejuizo, observacoes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pendente')
+       RETURNING *`,
+      [colaborador_id || null, colaborador_nome || null, colaborador_cpf || null,
+       req.usuario.id, req.usuario.nome,
+       parseFloat(valor_total), parseInt(num_parcelas) || 1,
+       mes_inicio, ano_inicio,
+       data_ocorrido || null, descricao_prejuizo || null, observacoes || null]
     );
-    if (!colabs[0]) return R.notFound(res, "Colaborador não encontrado");
-    if (colabs[0].cod_situacao === "D") return R.badRequest(res, "Colaborador demitido não pode ter cadastro alterado");
-
-    const colab = colabs[0];
-
-    // Validar campos e domínios
-    for (const item of itens) {
-      const cfg = CAMPOS_PERMITIDOS[item.campo];
-      if (!cfg) return R.badRequest(res, `Campo inválido: ${item.campo}`);
-      if (!cfg.dominio.includes(item.novo_valor))
-        return R.badRequest(res, `Valor inválido para ${cfg.label}: ${item.novo_valor}`);
-    }
-
-    // Criar solicitação
-    const { rows } = await db.query(`
-      INSERT INTO atualizacao_cadastral
-        (colaborador_id, usuario_solicitante_id, usuario_solicitante_nome, observacao)
-      VALUES ($1, $2, $3, $4) RETURNING *
-    `, [colaborador_id, req.usuario.id, req.usuario.nome, observacao || null]);
-
-    const sol = rows[0];
-
-    // Inserir itens com valor anterior
-    for (const item of itens) {
-      const valorAnterior = colab[item.campo] || null;
-      await db.query(`
-        INSERT INTO atualizacao_cadastral_itens (solicitacao_id, campo, valor_anterior, novo_valor)
-        VALUES ($1, $2, $3, $4)
-      `, [sol.id, item.campo, valorAnterior, item.novo_valor]);
-    }
-
-    // Notificação Telegram
-    const { rows: colabNotif } = await db.query(
-      "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
-      [colaborador_id]
-    );
-    tg.notificar(req.usuario.id, "atualizacao_cadastral", {
-      colaborador_nome: colabNotif[0]?.nome,
-      chapa:            colabNotif[0]?.chapa,
-      funcao:           colabNotif[0]?.funcao,
-      centro_custo:     colabNotif[0]?.centro_custo,
-      desc_cc:          colabNotif[0]?.desc_cc,
-      observacao:       observacao,
-    }).catch(() => {});
-
-    return R.created(res, sol, "Solicitação criada com sucesso");
+    return R.created(res, r.rows[0], "Autorização criada com sucesso");
   } catch (e) { return R.error(res, e.message); }
 };
 
-// ── Aprovar / Reprovar ────────────────────────────────────────────────────────
-exports.aprovar = async (req, res) => {
+exports.addAnexo = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { acao, observacao } = req.body; // acao: "aprovar" | "reprovar"
-    if (!["aprovar","reprovar"].includes(acao))
-      return R.badRequest(res, "acao deve ser 'aprovar' ou 'reprovar'");
+    const { nome_arquivo, dados_base64 } = req.body;
+    if (!nome_arquivo || !dados_base64)
+      return R.badRequest(res, "Nome e dados do arquivo são obrigatórios");
+    if (dados_base64.length > 5 * 1024 * 1024)
+      return R.badRequest(res, "Arquivo muito grande (máximo 5MB)");
 
-    const { rows: sols } = await db.query(
-      "SELECT * FROM atualizacao_cadastral WHERE id=$1", [id]
+    const check = await db.query(
+      "SELECT id, gestor_id FROM autorizacao_desconto WHERE id=$1", [req.params.id]
     );
-    if (!sols[0]) return R.notFound(res, "Solicitação não encontrada");
-    if (!["solicitado","em_analise"].includes(sols[0].status))
-      return R.badRequest(res, "Solicitação não pode ser alterada neste status");
+    if (!check.rowCount) return R.notFound(res, "Autorização não encontrada");
+    if (req.usuario.perfil === "gestor" && check.rows[0].gestor_id !== req.usuario.id)
+      return R.forbidden(res, "Acesso negado");
 
-    const novoStatus = acao === "aprovar" ? "aprovado" : "reprovado";
-
-    await db.query(`
-      UPDATE atualizacao_cadastral SET
-        status=$1, usuario_aprovador_id=$2, usuario_aprovador_nome=$3,
-        data_aprovacao=NOW(), observacao=COALESCE($4, observacao), atualizado_em=NOW()
-      WHERE id=$5
-    `, [novoStatus, req.usuario.id, req.usuario.nome, observacao || null, id]);
-
-    // Se aprovado, atualizar cadastro do colaborador
-    if (acao === "aprovar") {
-      const { rows: itens } = await db.query(
-        "SELECT campo, novo_valor FROM atualizacao_cadastral_itens WHERE solicitacao_id=$1", [id]
-      );
-      for (const item of itens) {
-        await db.query(
-          `UPDATE colaboradores SET ${item.campo}=$1, atualizado_em=NOW() WHERE id=$2`,
-          [item.novo_valor, sols[0].colaborador_id]
-        );
-      }
-      // Finalizar
-      await db.query(
-        "UPDATE atualizacao_cadastral SET status='finalizado', atualizado_em=NOW() WHERE id=$1", [id]
-      );
-    }
-
-    return R.success(res, { message: `Solicitação ${novoStatus} com sucesso` });
+    const r = await db.query(
+      `UPDATE autorizacao_desconto
+         SET anexo_nome=$1, anexo_dados=$2, status='anexado', atualizado_em=NOW()
+       WHERE id=$3 RETURNING id, anexo_nome, status`,
+      [nome_arquivo, dados_base64, req.params.id]
+    );
+    return R.success(res, r.rows[0], "Anexo salvo com sucesso");
   } catch (e) { return R.error(res, e.message); }
 };
 
-// ── Cancelar ──────────────────────────────────────────────────────────────────
 exports.cancelar = async (req, res) => {
   try {
-    const { id } = req.params;
-    await db.query(
-      "UPDATE atualizacao_cadastral SET status='reprovado', atualizado_em=NOW() WHERE id=$1", [id]
+    const r = await db.query(
+      `UPDATE autorizacao_desconto SET status='cancelado', atualizado_em=NOW()
+       WHERE id=$1 AND status != 'cancelado' RETURNING id, status`,
+      [req.params.id]
     );
-    return R.success(res, { message: "Solicitação cancelada" });
+    if (!r.rowCount) return R.notFound(res, "Autorização não encontrada ou já cancelada");
+    return R.success(res, r.rows[0], "Autorização cancelada");
   } catch (e) { return R.error(res, e.message); }
 };
