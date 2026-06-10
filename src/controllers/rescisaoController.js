@@ -42,7 +42,7 @@ exports.lancar = async (req, res) => {
       const { rows: desls } = await db.query(`
         SELECT sd.*, c.descricao_filial, c.id AS col_id, c.nome AS col_nome, c.chapa AS col_chapa
         FROM solicitacao_desligamento sd
-        LEFT JOIN colaboradores c ON c.chapa = sd.chapa
+        LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
         WHERE sd.id = $1
       `, [desligamento_id]);
       desl = desls[0];
@@ -70,7 +70,14 @@ exports.lancar = async (req, res) => {
     }
 
     // Upsert — um lançamento por desligamento
-    const vTotal   = parseFloat(valor_total || total || 0);
+    // Se não encontrou desligamento e não foi passado desligamento_id, retorna erro
+    // pois desligamento_id é NOT NULL na tabela (migration_rescisao.sql v1).
+    if (!desl.id && !desligamento_id) {
+      return R.badRequest(res, "Não foi possível localizar um desligamento para esta chapa. Informe o desligamento_id diretamente.");
+    }
+
+    // Upsert — um lançamento por desligamento
+    const vTotal   = parseFloat(valor_total || 0);
     const vLiquido = parseFloat(liquido   || 0);
     const vProv    = parseFloat(proventos || 0);
     const vDesc    = parseFloat(descontos || 0);
