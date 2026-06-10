@@ -27,13 +27,13 @@ exports.listar = async (req, res) => {
     const { rows } = await db.query(`
       SELECT ac.*,
              c.chapa, c.nome AS colaborador_nome, c.funcao, c.data_admissao,
-             c.cod_situacao, c.centro_custo, c.desc_cc, c.descricao_filial,
+             c.cod_situacao,
              COALESCE(json_agg(aci.* ORDER BY aci.id) FILTER (WHERE aci.id IS NOT NULL), '[]') AS itens
       FROM atualizacao_cadastral ac
       JOIN colaboradores c ON ac.colaborador_id = c.id
       LEFT JOIN atualizacao_cadastral_itens aci ON aci.solicitacao_id = ac.id
       WHERE ${where.join(" AND ")}
-      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao, c.cod_situacao, c.centro_custo, c.desc_cc, c.descricao_filial
+      GROUP BY ac.id, c.chapa, c.nome, c.funcao, c.data_admissao, c.cod_situacao
       ORDER BY ac.criado_em DESC
     `, p);
     return R.success(res, rows);
@@ -111,18 +111,14 @@ exports.criar = async (req, res) => {
       "SELECT nome, chapa, funcao, centro_custo, desc_cc FROM colaboradores WHERE id=$1",
       [colaborador_id]
     );
-    await Promise.race([
-      tg.notificar(req.usuario.id, "atualizacao_cadastral", {
-        colaborador_nome: colabNotif[0]?.nome,
-        chapa:            colabNotif[0]?.chapa,
-        funcao:           colabNotif[0]?.funcao,
-        centro_custo:     colabNotif[0]?.centro_custo,
-        desc_cc:          colabNotif[0]?.desc_cc,
-        solicitante:      req.usuario.nome,
-        observacao:       observacao,
-      }),
-      new Promise(r => setTimeout(r, 4000))
-    ]);
+    tg.notificar(req.usuario.id, "atualizacao_cadastral", {
+      colaborador_nome: colabNotif[0]?.nome,
+      chapa:            colabNotif[0]?.chapa,
+      funcao:           colabNotif[0]?.funcao,
+      centro_custo:     colabNotif[0]?.centro_custo,
+      desc_cc:          colabNotif[0]?.desc_cc,
+      observacao:       observacao,
+    }).catch(() => {});
 
     return R.created(res, sol, "Solicitação criada com sucesso");
   } catch (e) { return R.error(res, e.message); }
