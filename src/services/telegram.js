@@ -1,195 +1,107 @@
-// src/services/telegram.js
+// src/controllers/telegramController.js
 "use strict";
+const tg = require("../services/telegram");
 const db = require("../config/database");
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const API       = `https://api.telegram.org/bot${BOT_TOKEN}`;
+// ── Webhook recebido do Telegram ──────────────────────────────────────────────
+exports.webhook = async (req, res) => {
+  // Responde imediatamente para o Telegram não reenviar
+  res.sendStatus(200);
 
-// ── Enviar mensagem simples ───────────────────────────────────────────────────
-async function enviarMensagem(chatId, texto) {
-  if (!BOT_TOKEN) return;
   try {
-    await fetch(`${API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: texto, parse_mode: "HTML" }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao enviar mensagem:", e.message);
-  }
-}
+    const update = req.body;
+    const msg    = update?.message;
+    if (!msg) return;
 
-// ── Enviar mensagem com botões inline ─────────────────────────────────────────
-async function enviarMensagemComBotoes(chatId, texto, botoes) {
-  if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id:      chatId,
-        text:         texto,
-        parse_mode:   "HTML",
-        reply_markup: { inline_keyboard: [botoes] },
-      }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao enviar mensagem com botões:", e.message);
-  }
-}
+    const chatId = msg.chat?.id;
+    const texto  = (msg.text || "").trim();
 
-// ── Editar mensagem existente (após ação) ─────────────────────────────────────
-async function editarMensagem(chatId, messageId, texto) {
-  if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/editMessageText`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id:    chatId,
-        message_id: messageId,
-        text:       texto,
-        parse_mode: "HTML",
-      }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao editar mensagem:", e.message);
-  }
-}
-
-// ── Responder callback query (remove o "loading" do botão) ────────────────────
-async function responderCallback(callbackQueryId, texto) {
-  if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callbackQueryId, text: texto }),
-    });
-  } catch (e) {}
-}
-
-// ── Montar texto da notificação ───────────────────────────────────────────────
-function montarTexto(tipo, dados) {
-  const emojis = {
-    desligamento:          "🔴",
-    plano_saude:           "💊",
-    atualizacao_cadastral: "📋",
-    ocorrencia:            "⚠️",
-    autorizacao_desconto:  "💰",
-    pagamento:             "💵",
-  };
-  const labels = {
-    desligamento:          "Desligamento",
-    plano_saude:           "Plano de Saúde",
-    atualizacao_cadastral: "Atualização Cadastral",
-    ocorrencia:            "Ocorrência Disciplinar",
-    autorizacao_desconto:  "Autorização de Desconto",
-    pagamento:             "Solicitação de Pagamento",
-  };
-
-  const fmtBRL = (v) => parseFloat(v||0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
-
-  const emoji = emojis[tipo] || "📌";
-  const label = labels[tipo]  || tipo;
-
-  return [
-    `${emoji} <b>Nova solicitação — ${label}</b>`,
-    ``,
-    `👤 <b>Colaborador:</b> ${dados.colaborador_nome || "—"}`,
-    dados.chapa        ? `🪪 <b>Matrícula:</b> ${dados.chapa}` : null,
-    dados.funcao       ? `💼 <b>Função:</b> ${dados.funcao}` : null,
-    dados.filial       ? `🏢 <b>Filial:</b> ${dados.filial}` : dados.centro_custo ? `🏢 <b>CC:</b> ${dados.centro_custo} — ${dados.desc_cc || ""}` : null,
-    dados.solicitante  ? `👨‍💼 <b>Solicitante:</b> ${dados.solicitante}` : null,
-    dados.tipo         ? `📌 <b>Tipo:</b> ${dados.tipo}` : null,
-    dados.motivo       ? `📝 <b>Motivo:</b> ${dados.motivo}` : null,
-    dados.observacao   ? `💬 <b>Obs:</b> ${dados.observacao}` : null,
-    // Totais de rescisão (só para desligamento)
-    dados.total_filial != null ? `\n💰 <b>Total gasto na filial (mês):</b> ${fmtBRL(dados.total_filial)}` : null,
-    dados.total_geral  != null ? `💰 <b>Total geral (mês):</b> ${fmtBRL(dados.total_geral)}` : null,
-    ``,
-    `🕐 ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
-    ``,
-    `🔗 <a href="https://benel-dpflow-5jas.vercel.app">Abrir DP Flow</a>`,
-  ].filter(l => l !== null).join("\n");
-}
-
-// ── Buscar totais de rescisão da filial no mês atual ─────────────────────────
-async function buscarTotaisRescisao(filial) {
-  try {
-    const mes = new Date().getMonth() + 1;
-    const ano = new Date().getFullYear();
-
-    const { rows: filialRows } = await db.query(`
-      SELECT COALESCE(SUM(valor_total), 0) AS total
-      FROM rescisao_valores
-      WHERE competencia_mes=$1 AND competencia_ano=$2
-        AND filial ILIKE $3
-    `, [mes, ano, `%${(filial||"").replace(/^BENEL TRANSPORTES\s*[-–]\s*/i,"").trim()}%`]);
-
-    const { rows: geralRows } = await db.query(`
-      SELECT COALESCE(SUM(valor_total), 0) AS total
-      FROM rescisao_valores
-      WHERE competencia_mes=$1 AND competencia_ano=$2
-    `, [mes, ano]);
-
-    return {
-      total_filial: parseFloat(filialRows[0]?.total || 0),
-      total_geral:  parseFloat(geralRows[0]?.total  || 0),
-    };
-  } catch (e) {
-    console.error("[Telegram] Erro ao buscar totais rescisão:", e.message);
-    return { total_filial: null, total_geral: null };
-  }
-}
-
-// ── Notificar todos dp/admin — com botões para desligamento ──────────────────
-async function notificar(_, tipo, dados) {
-  try {
-    const { rows } = await db.query(`
-      SELECT telegram_chat_id
-      FROM usuarios
-      WHERE perfil IN ('dp', 'admin', 'presidente')
-        AND ativo = true
-        AND telegram_chat_id IS NOT NULL
-    `);
-    if (!rows.length) return;
-
-    // Para desligamento, busca totais de rescisão e envia com botões
-    if (tipo === "desligamento" && dados.desligamento_id) {
-      const totais = await buscarTotaisRescisao(dados.filial);
-      const dadosCompletos = { ...dados, ...totais };
-      const texto = montarTexto(tipo, dadosCompletos);
-      const botoes = [
-        { text: "✅ Aprovar",  callback_data: `aprovar_desl_${dados.desligamento_id}` },
-        { text: "❌ Reprovar", callback_data: `reprovar_desl_${dados.desligamento_id}` },
-      ];
-      await Promise.all(rows.map(u => enviarMensagemComBotoes(u.telegram_chat_id, texto, botoes)));
-    } else {
-      const texto = montarTexto(tipo, dados);
-      await Promise.all(rows.map(u => enviarMensagem(u.telegram_chat_id, texto)));
+    // ── /start — usuário ainda não vinculado ──────────────────────────────────
+    if (texto === "/start" || texto.startsWith("/start ")) {
+      await tg.enviarMensagem(chatId,
+        `👋 <b>Bem-vindo ao DP Flow!</b>\n\n` +
+        `Para receber notificações, envie o seu e-mail de acesso no formato:\n\n` +
+        `<code>/vincular seu@email.com.br</code>`
+      );
+      return;
     }
+
+    // ── /vincular email ───────────────────────────────────────────────────────
+    if (texto.startsWith("/vincular ")) {
+      const email = texto.replace("/vincular ", "").trim().toLowerCase();
+      if (!email.includes("@")) {
+        await tg.enviarMensagem(chatId, "❌ E-mail inválido. Tente novamente:\n<code>/vincular seu@email.com.br</code>");
+        return;
+      }
+
+      // Verifica se o e-mail existe no sistema
+      const { rows } = await db.query(
+        "SELECT id, nome FROM usuarios WHERE LOWER(email)=$1 AND ativo=true", [email]
+      );
+      if (!rows[0]) {
+        await tg.enviarMensagem(chatId,
+          `❌ E-mail não encontrado no DP Flow.\n\nVerifique o e-mail cadastrado e tente novamente.`
+        );
+        return;
+      }
+
+      // Verifica se esse chat_id já está em outro usuário
+      const { rows: jaVinculado } = await db.query(
+        "SELECT id, nome FROM usuarios WHERE telegram_chat_id=$1", [String(chatId)]
+      );
+      if (jaVinculado[0] && jaVinculado[0].id !== rows[0].id) {
+        // Desvincula do anterior
+        await tg.desvincularChatId(String(chatId));
+      }
+
+      await tg.vincularChatId(email, chatId);
+
+      await tg.enviarMensagem(chatId,
+        `✅ <b>Vinculado com sucesso!</b>\n\n` +
+        `Olá, <b>${rows[0].nome}</b>!\n` +
+        `A partir de agora você receberá notificações de novas solicitações diretamente aqui.\n\n` +
+        `Para desvincular, envie <code>/sair</code>`
+      );
+      return;
+    }
+
+    // ── /sair ─────────────────────────────────────────────────────────────────
+    if (texto === "/sair") {
+      await tg.desvincularChatId(String(chatId));
+      await tg.enviarMensagem(chatId,
+        `👋 Notificações desativadas. Você não receberá mais mensagens do DP Flow.\n\n` +
+        `Para reativar, envie <code>/start</code>`
+      );
+      return;
+    }
+
+    // ── /status ───────────────────────────────────────────────────────────────
+    if (texto === "/status") {
+      const { rows } = await db.query(
+        "SELECT nome, email FROM usuarios WHERE telegram_chat_id=$1", [String(chatId)]
+      );
+      if (rows[0]) {
+        await tg.enviarMensagem(chatId,
+          `✅ <b>Vinculado como:</b> ${rows[0].nome}\n📧 ${rows[0].email}\n\nPara desvincular: <code>/sair</code>`
+        );
+      } else {
+        await tg.enviarMensagem(chatId,
+          `❌ Não vinculado.\n\nEnvie <code>/vincular seu@email.com.br</code> para ativar notificações.`
+        );
+      }
+      return;
+    }
+
+    // ── Mensagem desconhecida ─────────────────────────────────────────────────
+    await tg.enviarMensagem(chatId,
+      `🤖 Comandos disponíveis:\n\n` +
+      `<code>/start</code> — Iniciar\n` +
+      `<code>/vincular email</code> — Vincular sua conta\n` +
+      `<code>/status</code> — Ver conta vinculada\n` +
+      `<code>/sair</code> — Desvincular`
+    );
+
   } catch (e) {
-    console.error("[Telegram] Erro ao notificar DP:", e.message);
+    console.error("[TelegramWebhook] Erro:", e.message);
   }
-}
-
-// ── Vincular / Desvincular ────────────────────────────────────────────────────
-async function vincularChatId(email, chatId) {
-  await db.query(
-    "UPDATE usuarios SET telegram_chat_id=$1, atualizado_em=NOW() WHERE LOWER(email)=LOWER($2)",
-    [String(chatId), email.trim()]
-  );
-}
-
-async function desvincularChatId(chatId) {
-  await db.query(
-    "UPDATE usuarios SET telegram_chat_id=NULL, atualizado_em=NOW() WHERE telegram_chat_id=$1",
-    [String(chatId)]
-  );
-}
-
-module.exports = {
-  enviarMensagem, enviarMensagemComBotoes, editarMensagem,
-  responderCallback, notificar, vincularChatId, desvincularChatId,
 };
