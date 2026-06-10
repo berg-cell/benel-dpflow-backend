@@ -3,7 +3,6 @@
 const { DesligamentoModel, AuditoriaModel } = require("../models");
 const db = require("../config/database");
 const R = require("../utils/response");
-const tg = require("../services/telegram");
 
 // ── Validar colaborador para desligamento ─────────────────────────────────────
 exports.validarColaborador = async (req, res) => {
@@ -14,6 +13,7 @@ exports.validarColaborador = async (req, res) => {
 
     const c = r.rows[0];
 
+    // Regra 1 — situação "D" (demitido)
     if (c.cod_situacao === "D") {
       return R.success(res, {
         apto: false,
@@ -22,6 +22,7 @@ exports.validarColaborador = async (req, res) => {
       });
     }
 
+    // Regra 2 — estabilidade ativa
     if (c.data_fim_estabilidade) {
       const fimEstab = new Date(c.data_fim_estabilidade);
       fimEstab.setHours(0, 0, 0, 0);
@@ -40,12 +41,16 @@ exports.validarColaborador = async (req, res) => {
       }
     }
 
+    // Apto
     return R.success(res, { apto: true });
   } catch (e) { return R.error(res, e.message); }
 };
 
+
 const ALCADA = {
   pendente_superior: ["superior", "dp", "admin"],
+  // 2ª alçada — descomente quando quiser ativar:
+  // pendente_dp:    ["dp", "admin"],
   aprovado:          ["dp", "admin"],
   ajuste_solicitado: ["gestor", "dp", "admin"],
 };
@@ -85,30 +90,6 @@ exports.criar = async (req, res) => {
       tabela: "solicitacao_desligamento", registro_id: sol.id,
       dados_depois: req.body, ip: req.ip, user_agent: req.headers["user-agent"],
     });
-
-    // Notificação Telegram
-    try {
-      const { rows: colabNotif } = await db.query(
-        "SELECT nome, chapa, funcao, centro_custo, desc_cc, descricao_filial FROM colaboradores WHERE id=$1",
-        [req.body.colaborador_id]
-      );
-      await Promise.race([
-        tg.notificar(req.usuario.id, "desligamento", {
-          desligamento_id:  sol.id,
-          colaborador_nome: colabNotif[0]?.nome,
-          chapa:            colabNotif[0]?.chapa,
-          funcao:           colabNotif[0]?.funcao,
-          filial:           colabNotif[0]?.descricao_filial,
-          centro_custo:     colabNotif[0]?.centro_custo,
-          desc_cc:          colabNotif[0]?.desc_cc,
-          solicitante:      req.usuario.nome,
-          tipo:             req.body.tipo_desligamento || req.body.tipo || req.body.motivo,
-          motivo:           req.body.justificativa || req.body.observacao,
-        }),
-        new Promise(r => setTimeout(r, 4000))
-      ]);
-    } catch (_) {}
-
     return R.created(res, sol, "Solicitação criada com sucesso");
   } catch (e) { return R.error(res, e.message); }
 };
@@ -136,9 +117,11 @@ exports.aprovar = async (req, res) => {
     const perfil = req.usuario.perfil;
     const userId = req.usuario.id;
 
+    // Verifica alçada pelo perfil
     if (!ALCADA[sol.status]?.includes(perfil))
       return R.forbidden(res, "Você não tem permissão para agir neste status");
 
+    // Para 1ª alçada (superior): valida se é o superior vinculado na hierarquia
     if (sol.status === "pendente_superior" && perfil !== "admin" && perfil !== "dp") {
       if (!sol.superior_id)
         return R.forbidden(res, "Esta solicitação não possui superior vinculado na hierarquia. Contate o administrador.");
