@@ -135,7 +135,7 @@ exports.importarLote = async (req, res) => {
 
     for (const reg of registros) {
       try {
-        const { chapa, nome, filial, liquido, proventos, descontos,
+        const { chapa, nome, cod_filial, filial, liquido, proventos, descontos,
                 fgts_rescisorio, valor_total, competencia_mes, competencia_ano } = reg;
 
         if (!chapa || !competencia_mes || !competencia_ano) {
@@ -159,7 +159,19 @@ exports.importarLote = async (req, res) => {
 
         const col       = colabs[0];
         const desl      = desls[0];
-        const filialFinal = col?.descricao_filial || filial || "Sem Filial";
+
+        // Resolver filial pela tabela `filiais` (fonte unica de verdade), via cod_filial do CSV
+        let filialFinal = null;
+        const codNum = parseInt(cod_filial);
+        if (!isNaN(codNum)) {
+          const { rows: fil } = await db.query(
+            "SELECT descricao_filial FROM filiais WHERE cod_filial=$1 LIMIT 1",
+            [codNum]
+          );
+          if (fil[0]) filialFinal = fil[0].descricao_filial;
+        }
+        // Fallbacks: colaborador cadastrado -> filial do payload -> generico
+        if (!filialFinal) filialFinal = col?.descricao_filial || filial || "Sem Filial";
 
         const { rows: existing } = await db.query(
           "SELECT id FROM rescisao_valores WHERE colaborador_chapa=$1 AND competencia_mes=$2 AND competencia_ano=$3",
@@ -170,12 +182,12 @@ exports.importarLote = async (req, res) => {
           await db.query(`
             UPDATE rescisao_valores SET
               liquido=$1, proventos=$2, descontos=$3, fgts_rescisorio=$4, valor_total=$5,
-              lancado_por_id=$6, lancado_por_nome=$7, atualizado_em=NOW()
-            WHERE id=$8
+              filial=$6, lancado_por_id=$7, lancado_por_nome=$8, atualizado_em=NOW()
+            WHERE id=$9
           `, [
             parseFloat(liquido)||0, parseFloat(proventos)||0, parseFloat(descontos)||0,
             parseFloat(fgts_rescisorio)||0, parseFloat(valor_total)||0,
-            req.usuario.id, req.usuario.nome, existing[0].id
+            filialFinal, req.usuario.id, req.usuario.nome, existing[0].id
           ]);
           atualizados++;
         } else {
