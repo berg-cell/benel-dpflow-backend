@@ -292,11 +292,11 @@ const DesligamentoModel = {
       SELECT sd.*,
              c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
              c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
-             c.data_admissao, c.cod_filial, f.municipio,
+             c.data_admissao, f.municipio,
              u.nome AS gestor_nome
       FROM solicitacao_desligamento sd
       LEFT JOIN colaboradores c ON sd.colaborador_id = c.id
-      LEFT JOIN filiais f       ON f.cod_filial = c.cod_filial
+      LEFT JOIN filiais f       ON f.descricao_filial = c.descricao_filial
       LEFT JOIN usuarios u      ON sd.gestor_id = u.id
       WHERE 1=1
     `;
@@ -312,12 +312,12 @@ const DesligamentoModel = {
       SELECT sd.*,
              c.nome AS colaborador_nome, c.chapa, c.cpf, c.funcao,
              c.centro_custo, c.desc_cc, c.tipo_contrato, c.data_fim_contrato,
-             c.data_admissao, c.cod_filial, f.municipio,
+             c.data_admissao, f.municipio,
              u.nome AS gestor_nome,
              us.nome AS superior_nome_atual
       FROM solicitacao_desligamento sd
       LEFT JOIN colaboradores c  ON sd.colaborador_id = c.id
-      LEFT JOIN filiais f        ON f.cod_filial = c.cod_filial
+      LEFT JOIN filiais f        ON f.descricao_filial = c.descricao_filial
       LEFT JOIN usuarios u       ON sd.gestor_id = u.id
       WHERE sd.id=$1
     `, [id]),
