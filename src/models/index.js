@@ -319,6 +319,7 @@ const DesligamentoModel = {
       LEFT JOIN colaboradores c  ON sd.colaborador_id = c.id
       LEFT JOIN filiais f        ON f.descricao_filial = c.descricao_filial
       LEFT JOIN usuarios u       ON sd.gestor_id = u.id
+      LEFT JOIN usuarios us      ON sd.superior_id = us.id
       WHERE sd.id=$1
     `, [id]),
 
