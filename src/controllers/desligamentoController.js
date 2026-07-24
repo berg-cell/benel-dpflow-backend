@@ -3,6 +3,7 @@
 const { DesligamentoModel, AuditoriaModel } = require("../models");
 const db = require("../config/database");
 const R = require("../utils/response");
+const tg = require("../services/telegram");
 
 // ── Validar colaborador para desligamento ─────────────────────────────────────
 exports.validarColaborador = async (req, res) => {
@@ -102,6 +103,37 @@ exports.enviar = async (req, res) => {
       tabela: "solicitacao_desligamento", registro_id: sol.id,
       ip: req.ip, user_agent: req.headers["user-agent"],
     });
+
+    // Notificar aprovadores no Telegram (com botoes inline aprovar/reprovar)
+    try {
+      const { rows } = await db.query(`
+        SELECT sd.id, sd.tipo, sd.motivo, sd.observacao,
+               c.nome AS colaborador_nome, c.chapa, c.funcao, c.descricao_filial,
+               u.nome AS solicitante_nome
+        FROM solicitacao_desligamento sd
+        LEFT JOIN colaboradores c ON c.id = sd.colaborador_id
+        LEFT JOIN usuarios u      ON u.id = sd.gestor_id
+        WHERE sd.id = $1
+      `, [sol.id]);
+      const d = rows[0];
+      if (d) {
+        // notificar e assincrono; nao travar a resposta ao usuario
+        tg.notificar(req.usuario.id, "desligamento", {
+          desligamento_id:  d.id,
+          colaborador_nome: d.colaborador_nome,
+          chapa:            d.chapa,
+          funcao:           d.funcao,
+          filial:           d.descricao_filial,
+          solicitante:      d.solicitante_nome,
+          tipo:             d.tipo,
+          motivo:           d.motivo,
+          observacao:       d.observacao,
+        }).catch(err => console.error("[Telegram] notificar desligamento:", err.message));
+      }
+    } catch (err) {
+      console.error("[Telegram] Falha ao preparar notificacao de desligamento:", err.message);
+    }
+
     return R.success(res, sol, "Solicitação enviada para aprovação");
   } catch (e) { return R.error(res, e.message, e.status || 500); }
 };
