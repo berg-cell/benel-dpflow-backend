@@ -4,8 +4,15 @@ const tg = require("../services/telegram");
 const db = require("../config/database");
 
 exports.webhook = async (req, res) => {
+  // Em serverless (Vercel), precisamos AGUARDAR o processamento antes de
+  // responder — senão a função é congelada e a conexão com o banco é
+  // cortada no meio ("Connection terminated due to connection timeout").
+  try {
+    await processarUpdate(req.body);
+  } catch (e) {
+    console.error("[TelegramWebhook] Erro:", e.message);
+  }
   res.sendStatus(200);
-  processarUpdate(req.body).catch(() => {});
 };
 
 async function processarUpdate(update) {
