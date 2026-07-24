@@ -107,7 +107,7 @@ exports.enviar = async (req, res) => {
     // Notificar aprovadores no Telegram (com botoes inline aprovar/reprovar)
     try {
       const { rows } = await db.query(`
-        SELECT sd.id, sd.tipo, sd.motivo, sd.observacao,
+        SELECT sd.id, sd.tipo, sd.justificativa, sd.observacoes,
                c.nome AS colaborador_nome, c.chapa, c.funcao, c.descricao_filial,
                u.nome AS solicitante_nome
         FROM solicitacao_desligamento sd
@@ -127,7 +127,7 @@ exports.enviar = async (req, res) => {
           solicitante:      d.solicitante_nome,
           tipo:             d.tipo,
           motivo:           d.motivo,
-          observacao:       d.observacao,
+          observacao:       d.observacoes,
         }).catch(err => console.error("[Telegram] notificar desligamento:", err.message));
       }
     } catch (err) {
