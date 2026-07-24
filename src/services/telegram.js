@@ -5,68 +5,77 @@ const db = require("../config/database");
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API       = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
+const https = require("https");
+
+// ── Helper: POST JSON para a API do Telegram usando https nativo ─────────────
+// (substitui o fetch global, que falha no runtime serverless do Vercel)
+function tgPost(metodo, payload) {
+  return new Promise((resolve) => {
+    if (!BOT_TOKEN) return resolve(null);
+    try {
+      const body = JSON.stringify(payload);
+      const req = https.request(
+        {
+          hostname: "api.telegram.org",
+          path: `/bot${BOT_TOKEN}/${metodo}`,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let data = "";
+          res.on("data", (c) => (data += c));
+          res.on("end", () => resolve(data));
+        }
+      );
+      req.on("error", (e) => {
+        console.error(`[Telegram] Erro ${metodo}:`, e.message);
+        resolve(null);
+      });
+      req.write(body);
+      req.end();
+    } catch (e) {
+      console.error(`[Telegram] Exceção ${metodo}:`, e.message);
+      resolve(null);
+    }
+  });
+}
+
+
 // ── Enviar mensagem simples ───────────────────────────────────────────────────
 async function enviarMensagem(chatId, texto) {
   if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: texto, parse_mode: "HTML" }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao enviar mensagem:", e.message);
-  }
+  await tgPost("sendMessage", { chat_id: chatId, text: texto, parse_mode: "HTML" });
 }
 
 // ── Enviar mensagem com botões inline ─────────────────────────────────────────
 async function enviarMensagemComBotoes(chatId, texto, botoes) {
   if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id:      chatId,
-        text:         texto,
-        parse_mode:   "HTML",
-        reply_markup: { inline_keyboard: [botoes] },
-      }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao enviar mensagem com botões:", e.message);
-  }
+  await tgPost("sendMessage", {
+    chat_id:      chatId,
+    text:         texto,
+    parse_mode:   "HTML",
+    reply_markup: { inline_keyboard: [botoes] },
+  });
 }
 
 // ── Editar mensagem existente (após ação) ─────────────────────────────────────
 async function editarMensagem(chatId, messageId, texto) {
   if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/editMessageText`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id:    chatId,
-        message_id: messageId,
-        text:       texto,
-        parse_mode: "HTML",
-      }),
-    });
-  } catch (e) {
-    console.error("[Telegram] Falha ao editar mensagem:", e.message);
-  }
+  await tgPost("editMessageText", {
+    chat_id:    chatId,
+    message_id: messageId,
+    text:       texto,
+    parse_mode: "HTML",
+  });
 }
 
 // ── Responder callback query (remove o "loading" do botão) ────────────────────
 async function responderCallback(callbackQueryId, texto) {
   if (!BOT_TOKEN) return;
-  try {
-    await fetch(`${API}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callbackQueryId, text: texto }),
-    });
-  } catch (e) {}
+  await tgPost("answerCallbackQuery", { callback_query_id: callbackQueryId, text: texto });
 }
 
 // ── Montar texto da notificação ───────────────────────────────────────────────
