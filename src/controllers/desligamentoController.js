@@ -118,7 +118,7 @@ exports.enviar = async (req, res) => {
       const d = rows[0];
       if (d) {
         // notificar e assincrono; nao travar a resposta ao usuario
-        tg.notificar(req.usuario.id, "desligamento", {
+      await tg.notificar(req.usuario.id, "desligamento", {
           desligamento_id:  d.id,
           colaborador_nome: d.colaborador_nome,
           chapa:            d.chapa,
@@ -126,9 +126,9 @@ exports.enviar = async (req, res) => {
           filial:           d.descricao_filial,
           solicitante:      d.solicitante_nome,
           tipo:             d.tipo,
-          motivo:           d.motivo,
+          motivo:           d.justificativa,
           observacao:       d.observacoes,
-        }).catch(err => console.error("[Telegram] notificar desligamento:", err.message));
+        });  
       }
     } catch (err) {
       console.error("[Telegram] Falha ao preparar notificacao de desligamento:", err.message);
