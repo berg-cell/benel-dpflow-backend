@@ -342,6 +342,30 @@ const DesligamentoModel = {
 
   create: (dados, gestorId) =>
     db.transaction(async (client) => {
+      // ── REGRA 1: data de desligamento não pode ser anterior a hoje ──
+      const _hoje = new Date(); _hoje.setHours(0, 0, 0, 0);
+      const _dataDeslig = new Date(dados.data_desligamento);
+      if (isNaN(_dataDeslig) || _dataDeslig < _hoje) {
+        throw Object.assign(
+          new Error("Não é permitido abrir solicitações com data anterior à data atual. Informe a data de hoje ou uma data futura."),
+          { status: 400 }
+        );
+      }
+
+      // ── REGRA 3: bloquear desligamento duplicado (ativo/aprovado/finalizado) ──
+      const _dup = await client.query(
+        `SELECT id FROM solicitacao_desligamento
+         WHERE colaborador_id = $1
+           AND status IN ('pendente_superior','aprovado','finalizado')
+         LIMIT 1`,
+        [dados.colaborador_id]
+      );
+      if (_dup.rows.length) {
+        throw Object.assign(
+          new Error("Já existe uma solicitação de desligamento ativa ou aprovada para este colaborador. Para abrir uma nova solicitação, a solicitação anterior deverá estar cancelada."),
+          { status: 400 }
+        );
+      }
       // Busca o superior vinculado na hierarquia para este gestor
       // Considera centro_custo específico ou regra global (centro_custo IS NULL)
       const hierResult = await client.query(`
