@@ -23,7 +23,7 @@ exports.listarHierarquia = async (req, res) => {
 
 exports.criarHierarquia = async (req, res) => {
   try {
-    const { gestor_id, superior_id, centro_custo, desc_cc } = req.body;
+    const { gestor_id, superior_id, centro_custo, desc_cc, descricao_filial } = req.body;
     if (!gestor_id || !superior_id)
       return R.badRequest(res, "Gestor e Superior são obrigatórios");
 
@@ -31,9 +31,9 @@ exports.criarHierarquia = async (req, res) => {
     const us = await db.query("SELECT nome FROM usuarios WHERE id=$1", [superior_id]);
 
     const r = await db.query(`
-      INSERT INTO hierarquia_aprovacao (gestor_id, superior_id, centro_custo, desc_cc, ativo)
-      VALUES ($1,$2,$3,$4,true) RETURNING *
-    `, [gestor_id, superior_id, centro_custo || null, desc_cc || null]);
+      INSERT INTO hierarquia_aprovacao (gestor_id, superior_id, centro_custo, desc_cc, descricao_filial, ativo)
+      VALUES ($1,$2,$3,$4,$5,true) RETURNING *
+    `, [gestor_id, superior_id, centro_custo || null, desc_cc || null, descricao_filial || null]);
 
     const row = {
       ...r.rows[0],
@@ -46,12 +46,12 @@ exports.criarHierarquia = async (req, res) => {
 
 exports.atualizarHierarquia = async (req, res) => {
   try {
-    const { gestor_id, superior_id, centro_custo, desc_cc, ativo } = req.body;
+    const { gestor_id, superior_id, centro_custo, desc_cc, ativo, descricao_filial } = req.body;
     const r = await db.query(`
       UPDATE hierarquia_aprovacao
-      SET gestor_id=$1, superior_id=$2, centro_custo=$3, desc_cc=$4, ativo=$5, atualizado_em=NOW()
-      WHERE id=$6 RETURNING *
-    `, [gestor_id, superior_id, centro_custo || null, desc_cc || null, ativo ?? true, req.params.id]);
+      SET gestor_id=$1, superior_id=$2, centro_custo=$3, desc_cc=$4, descricao_filial=$5, ativo=$6, atualizado_em=NOW()
+      WHERE id=$7 RETURNING *
+    `, [gestor_id, superior_id, centro_custo || null, desc_cc || null, descricao_filial || null, ativo ?? true, req.params.id]);
     if (r.rowCount === 0) return R.notFound(res, "Regra não encontrada");
 
     const ug = await db.query("SELECT nome FROM usuarios WHERE id=$1", [gestor_id]);
