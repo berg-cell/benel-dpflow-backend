@@ -85,7 +85,7 @@ exports.buscarPorId = async (req, res) => {
 
 exports.criar = async (req, res) => {
   try {
-    const sol = await DesligamentoModel.create(req.body, req.usuario.id);
+    const sol = await DesligamentoModel.create(req.body, req.usuario.id, req.usuario.perfil);
     await AuditoriaModel.registrar({
       usuario_id: req.usuario.id, acao: "DESLIGAMENTO_CRIADO",
       tabela: "solicitacao_desligamento", registro_id: sol.id,

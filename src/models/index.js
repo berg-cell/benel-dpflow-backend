@@ -340,7 +340,7 @@ const DesligamentoModel = {
       ORDER BY criado_em ASC
     `, [solicitacaoId]),
 
-  create: (dados, gestorId) =>
+  create: (dados, gestorId, perfil) =>
     db.transaction(async (client) => {
       // ── REGRA 1: data de desligamento não pode ser anterior a hoje ──
       const _hoje = new Date(); _hoje.setHours(0, 0, 0, 0);
@@ -365,6 +365,31 @@ const DesligamentoModel = {
           new Error("Já existe uma solicitação de desligamento ativa ou aprovada para este colaborador. Para abrir uma nova solicitação, a solicitação anterior deverá estar cancelada."),
           { status: 400 }
         );
+      }
+      // ── ETAPA 3: restrição de abertura por filial/CC (só para gestor) ──
+      const _perfil = (perfil || "").toLowerCase();
+      if (!["admin", "dp", "presidente"].includes(_perfil)) {
+        const _colab = await client.query(
+          "SELECT descricao_filial, centro_custo FROM colaboradores WHERE id = $1",
+          [dados.colaborador_id]
+        );
+        const _cFilial = _colab.rows[0]?.descricao_filial || null;
+        const _cCC     = _colab.rows[0]?.centro_custo || null;
+        const _regra = await client.query(
+          `SELECT id FROM hierarquia_aprovacao
+           WHERE gestor_id = $1
+             AND ativo = true
+             AND descricao_filial = $2
+             AND (centro_custo IS NULL OR centro_custo = '' OR centro_custo = $3)
+           LIMIT 1`,
+          [gestorId, _cFilial, _cCC]
+        );
+        if (!_regra.rows.length) {
+          throw Object.assign(
+            new Error("Você não tem permissão para abrir desligamento para colaboradores desta filial/centro de custo. Verifique com o DP se sua regra de hierarquia está cadastrada."),
+            { status: 403 }
+          );
+        }
       }
       // Busca o superior vinculado na hierarquia para este gestor
       // Considera centro_custo específico ou regra global (centro_custo IS NULL)
