@@ -49,11 +49,10 @@ exports.validarColaborador = async (req, res) => {
 
 
 const ALCADA = {
-  pendente_superior: ["superior", "dp", "admin"],
-  // 2ª alçada — descomente quando quiser ativar:
-  // pendente_dp:    ["dp", "admin"],
-  aprovado:          ["dp", "admin"],
-  ajuste_solicitado: ["gestor", "dp", "admin"],
+  pendente_superior:   ["superior", "dp", "admin"],
+  pendente_presidente: ["presidente", "dp", "admin"],
+  aprovado:            ["dp", "admin"],
+  ajuste_solicitado:   ["gestor", "dp", "admin"],
 };
 
 exports.listar = async (req, res) => {
@@ -159,6 +158,11 @@ exports.aprovar = async (req, res) => {
         return R.forbidden(res, "Esta solicitação não possui superior vinculado na hierarquia. Contate o administrador.");
       if (sol.superior_id !== userId)
         return R.forbidden(res, "Você não é o superior responsável por esta solicitação conforme a hierarquia cadastrada.");
+    }
+      // Para 2ª alçada (presidente): valida se é presidente (admin/dp também passam)
+    if (sol.status === "pendente_presidente" && perfil !== "admin" && perfil !== "dp") {
+      if (perfil !== "presidente")
+        return R.forbidden(res, "Apenas o presidente (ou DP/admin) pode aprovar ou reprovar neste nível.");
     }
 
     const novoStatus = await DesligamentoModel.avancarStatus(id, userId, acao, observacao);

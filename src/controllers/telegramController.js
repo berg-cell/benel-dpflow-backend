@@ -140,16 +140,16 @@ async function processarCallback(cb) {
 
     const sol = sols[0];
 
-    if (!["pendente_superior","aprovado","ajuste_solicitado"].includes(sol.status)) {
+    if (!["pendente_superior","pendente_presidente","ajuste_solicitado"].includes(sol.status)) {
       await tg.responderCallback(callbackQueryId, `⚠️ Solicitação já está em status: ${sol.status}`);
       return;
     }
 
     // Avançar status
     const PROXIMO = {
-      pendente_superior: { aprovar: "aprovado",  reprovar: "reprovado" },
-      aprovado:          { aprovar: "finalizado", reprovar: "reprovado" },
-      ajuste_solicitado: { aprovar: "aprovado",   reprovar: "reprovado" },
+      pendente_superior:   { aprovar: "pendente_presidente", reprovar: "rascunho" },
+      pendente_presidente: { aprovar: "finalizado",          reprovar: "pendente_superior" },
+      ajuste_solicitado:   { aprovar: "pendente_presidente", reprovar: "reprovado" },
     };
     const novoStatus = PROXIMO[sol.status]?.[acao] || (acao === "aprovar" ? "aprovado" : "reprovado");
 
@@ -187,6 +187,22 @@ async function processarCallback(cb) {
     if (outros.length) {
       const aviso = `${emoji} Solicitação #${solId} foi <b>${label}</b> por <b>${usuario.nome}</b> via Telegram.`;
       await Promise.all(outros.map(u => tg.enviarMensagem(u.telegram_chat_id, aviso)));
+    }
+    // ── Etapa 4: se subiu para o presidente, notifica os presidentes com botões ──
+    if (novoStatus === "pendente_presidente") {
+      const { rows: presidentes } = await db.query(
+        "SELECT telegram_chat_id FROM usuarios WHERE perfil='presidente' AND ativo=true AND telegram_chat_id IS NOT NULL"
+      );
+      const textoPres =
+        `${msgOriginal}\n\n✅ <b>Aprovado pela 1ª alçada</b> (${usuario.nome})\n` +
+        `🔔 <b>Aguardando aprovação da 2ª alçada (Presidência)</b>`;
+      const botoes = [
+        { text: "✅ Aprovar", callback_data: `aprovar_desl_${solId}` },
+        { text: "❌ Reprovar", callback_data: `reprovar_desl_${solId}` },
+      ];
+      await Promise.all(
+        presidentes.map(p => tg.enviarMensagemComBotoes(p.telegram_chat_id, textoPres, botoes))
+      );
     }
 
     return;

@@ -452,15 +452,16 @@ const DesligamentoModel = {
       );
       if (!rowCount) throw Object.assign(new Error("Solicitação não encontrada"), { status: 404 });
       const mapa = {
-        // Alçada ativa: superior → aprovado direto
-        pendente_superior: "aprovado",
-        // 2ª alçada (desativada por ora, mantida para uso futuro):
-        // pendente_superior: "pendente_dp",
-        pendente_dp:       "aprovado",
+        pendente_superior:   "pendente_presidente",  // nível 1 (superior) aprovou → vai p/ presidente
+        pendente_presidente: "finalizado",           // nível 2 (presidente) aprovou → finalizado
       };
       let novoStatus = rows[0].status;
       if (acao === "aprovar")           novoStatus = mapa[novoStatus] || "aprovado";
-      if (acao === "reprovar")          novoStatus = "reprovado";
+      if (acao === "reprovar") {
+        if (novoStatus === "pendente_superior")        novoStatus = "rascunho";            // nível 1 reprova → volta p/ gestor
+        else if (novoStatus === "pendente_presidente") novoStatus = "pendente_superior";   // nível 2 reprova → volta p/ nível 1
+        else                                           novoStatus = "reprovado";
+      }
       if (acao === "solicitar_ajuste")  novoStatus = "ajuste_solicitado";
       if (acao === "finalizar")         novoStatus = "finalizado";
       await client.query(
